@@ -13,15 +13,9 @@ namespace ObjectPoolLinter
         public const string DiagnosticId = "OPL001";
 
         private const string Category = "Performance";
-
-        private static readonly LocalizableString Title =
-            "Object allocation in hot path";
-
-        private static readonly LocalizableString MessageFormat =
-            "'{1}' is allocated inside the frequently-called method '{0}'. Consider using an object pool to avoid per-frame allocations.";
-
-        private static readonly LocalizableString Description =
-            "Allocating objects inside frequently-invoked Unity methods (such as Update) causes garbage collection pressure and frame hitches. Reuse instances via an object pool instead.";
+        private static readonly LocalizableString Title = "Object allocation in hot path";
+        private static readonly LocalizableString MessageFormat = "'{1}' is allocated inside the frequently-called method '{0}'. Consider using an object pool to avoid per-frame allocations.";
+        private static readonly LocalizableString Description = "Allocating objects inside frequently-invoked Unity methods (such as Update) causes garbage collection pressure and frame hitches. Reuse instances via an object pool instead.";
 
         private static readonly DiagnosticDescriptor Rule = new(
             DiagnosticId,
@@ -30,7 +24,8 @@ namespace ObjectPoolLinter
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: Description);
+            description: Description
+        );
 
         private static readonly ImmutableHashSet<string> HotPathMethodNames =
             ImmutableHashSet.Create(
@@ -51,18 +46,16 @@ namespace ObjectPoolLinter
                 "OnPreRender",
                 "OnPostRender",
                 "OnDrawGizmos",
-                "OnDrawGizmosSelected");
+                "OnDrawGizmosSelected"
+            );
 
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-            ImmutableArray.Create(Rule);
+        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
             context.EnableConcurrentExecution();
-
             context.RegisterSyntaxNodeAction(AnalyzeObjectCreation, SyntaxKind.ObjectCreationExpression);
-
             context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
         }
 
@@ -71,10 +64,7 @@ namespace ObjectPoolLinter
             var objectCreation = (ObjectCreationExpressionSyntax)context.Node;
 
             var typeInfo = context.SemanticModel.GetTypeInfo(objectCreation, context.CancellationToken);
-            if (typeInfo.Type != null && typeInfo.Type.IsValueType)
-            {
-                return;
-            }
+            if (typeInfo.Type != null && typeInfo.Type.IsValueType) return;
 
             if (TryGetHotPathMethod(objectCreation, context.SemanticModel, out var methodName))
             {
@@ -92,10 +82,7 @@ namespace ObjectPoolLinter
         {
             var invocation = (InvocationExpressionSyntax)context.Node;
 
-            if (!IsInstantiateCall(invocation, context.SemanticModel))
-            {
-                return;
-            }
+            if (!IsInstantiateCall(invocation, context.SemanticModel)) return;
 
             if (TryGetHotPathMethod(invocation, context.SemanticModel, out var methodName))
             {
@@ -132,16 +119,12 @@ namespace ObjectPoolLinter
             var method = node.Ancestors()
                 .OfType<MethodDeclarationSyntax>()
                 .FirstOrDefault();
-
-            if (method == null)
-                return false;
+            if (method == null) return false;
 
             var methodSymbol = semanticModel.GetDeclaredSymbol(method);
-            if (methodSymbol == null)
-                return false;
+            if (methodSymbol == null)return false;
 
-            if (!IsUnityMessage(methodSymbol))
-                return false;
+            if (!IsUnityMessage(methodSymbol)) return false;
 
             methodName = methodSymbol.Name;
             return true;
@@ -149,8 +132,7 @@ namespace ObjectPoolLinter
 
         private static bool IsUnityMessage(IMethodSymbol methodSymbol)
         {
-            if (!HotPathMethodNames.Contains(methodSymbol.Name))
-                return false;
+            if (!HotPathMethodNames.Contains(methodSymbol.Name)) return false;
 
             var containingType = methodSymbol.ContainingType;
             while (containingType != null)
