@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using System.Composition;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -8,7 +7,6 @@ using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Editing;
 
 namespace ObjectPoolLinter
 {
@@ -24,12 +22,9 @@ namespace ObjectPoolLinter
         public sealed override async Task RegisterCodeFixesAsync(CodeFixContext context)
         {
             var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
-            if (root == null)
-            {
-                return;
-            }
+            if (root == null) return;
 
-            var diagnostic = context.Diagnostics.First();
+            var diagnostic = context.Diagnostics[0];
             var diagnosticSpan = diagnostic.Location.SourceSpan;
 
             var node = root.FindNode(diagnosticSpan);
@@ -58,10 +53,7 @@ namespace ObjectPoolLinter
             CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            if (root == null)
-            {
-                return document;
-            }
+            if (root == null) return document;
 
             var typeName = objectCreation.Type.ToString();
             var poolGet = SyntaxFactory.ParseExpression($"{typeName}Pool.Get()")
@@ -77,10 +69,7 @@ namespace ObjectPoolLinter
             CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            if (root == null)
-            {
-                return document;
-            }
+            if (root == null) return document;
 
             var comment = SyntaxFactory.Comment("// TODO: use an object pool to avoid per-frame allocation");
 
