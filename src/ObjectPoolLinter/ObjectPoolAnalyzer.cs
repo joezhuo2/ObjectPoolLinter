@@ -55,24 +55,43 @@ namespace ObjectPoolLinter
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
             context.EnableConcurrentExecution();
-            context.RegisterSyntaxNodeAction(AnalyzeObjectCreation, SyntaxKind.ObjectCreationExpression);
+
+            context.RegisterSyntaxNodeAction(
+                AnalyzeAllocation, 
+                SyntaxKind.ObjectCreationExpression,
+                SyntaxKind.ArrayCreationExpression,
+                SyntaxKind.ImplicitArrayCreationExpression,
+                SyntaxKind.ImplicitObjectCreationExpression
+            );
+            
             context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
         }
 
-        private static void AnalyzeObjectCreation(SyntaxNodeAnalysisContext context)
+        private static void AnalyzeAllocation(SyntaxNodeAnalysisContext context)
         {
-            var objectCreation = (ObjectCreationExpressionSyntax)context.Node;
+            var node = context.Node;
 
-            var typeInfo = context.SemanticModel.GetTypeInfo(objectCreation, context.CancellationToken);
-            if (typeInfo.Type != null && typeInfo.Type.IsValueType) return;
+            var typeInfo = context.SemanticModel.GetTypeInfo(node, context.CancellationToken);
+            var type = typeInfo.Type ?? typeInfo.ConvertedType;
+            if (type == null) return;
 
-            if (TryGetHotPathMethod(objectCreation, context.SemanticModel, out var methodName))
+            if (type.IsValueType && type is not IArrayTypeSymbol) return;
+
+            string allocatedTypeName = node switch
+            {
+                ObjectCreationExpressionSyntax obj => obj.Type.ToString(),
+                ArrayCreationExpressionSyntax arr => arr.Type.ToString(),
+                _ => type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+            };
+
+            if (TryGetHotPathMethod(node, context.SemanticModel, out var methodName))
             {
                 var diagnostic = Diagnostic.Create(
                     Rule,
-                    objectCreation.GetLocation(),
+                    node.GetLocation(),
                     methodName,
-                    objectCreation.Type.ToString());
+                    allocatedTypeName
+                );
 
                 context.ReportDiagnostic(diagnostic);
             }
