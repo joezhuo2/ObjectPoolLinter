@@ -5,6 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0]
+
+### Fixed
+- Code fix emitted invalid C# for generic types: `new List<int>()` produced
+  `List<int>Pool.Get()` instead of `ListPool<int>.Get()`. The `Pool` suffix was appended
+  to the whole rendered type name, so it landed after the type arguments.
+- Code fix emitted the wrong pool name for qualified types: `new Foo.Bar()` produced
+  `Foo.BarPool.Get()` instead of `BarPool.Get()`.
+- Code fix was never offered for target-typed `new()`, although the analyzer reports it.
+  `List<int> x = new();` now offers `ListPool<int>.Get()`.
+
+### Changed
+- `ReplaceWithPoolGetAsync` builds the replacement from the type **symbol**
+  (`INamedTypeSymbol.Name` plus its type arguments) rather than from
+  `objectCreation.Type.ToString()`, and composes it from `SyntaxFactory` nodes rather
+  than `SyntaxFactory.ParseExpression` on an interpolated string. Type arguments are
+  reused from the user's own syntax where it exists, and printed from the symbol via
+  `ToMinimalDisplayString` for target-typed `new()`, where there is no type syntax.
+- `RegisterCodeFixesAsync` matches `BaseObjectCreationExpressionSyntax`, covering both
+  `new T()` and `new()`.
+- The fix now returns the document unchanged when the type cannot be resolved, or when a
+  type argument printed from the symbol does not round-trip through `ParseTypeName`,
+  instead of emitting a guess.
+
+### Notes
+- Constructor arguments and object/collection initializers are still dropped by the fix
+  (`new Enemy(hp)` becomes `EnemyPool.Get()`); tracked in `RELEASE_CHECKLIST.md` A1.
+- Still no `CodeFixProvider` tests, so the above is verified by inspection only.
+
 ## [v0.1.0]
 
 ### Added
