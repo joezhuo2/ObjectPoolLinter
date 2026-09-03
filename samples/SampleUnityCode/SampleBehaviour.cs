@@ -9,6 +9,7 @@ public class PlayerBehaviour : MonoBehaviour
     {
         // Warning: List<int> allocated in Update
         var list = new System.Collections.Generic.List<int>();
+        List<string> s = new();
 
         // Warning: Instantiate in Update
         UnityEngine.Object.Instantiate(prefab);
