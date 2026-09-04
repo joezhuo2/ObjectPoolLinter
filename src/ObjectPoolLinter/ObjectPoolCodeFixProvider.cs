@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Linq;
 using System.Composition;
 using System.Threading;
@@ -111,10 +111,31 @@ namespace ObjectPoolLinter
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             if (root == null) return document;
 
-            var comment = SyntaxFactory.Comment("// TODO: use an object pool to avoid per-frame allocation");
+            var statement = node.FirstAncestorOrSelf<StatementSyntax>();
+            if (statement == null) return document;
 
-            var newRoot = root.ReplaceNode(node, node.WithLeadingTrivia(node.GetLeadingTrivia().Insert(0, comment)));
+            var leadingTrivia = statement.GetLeadingTrivia();
+            var indentation = leadingTrivia.LastOrDefault(t => t.IsKind(SyntaxKind.WhitespaceTrivia));
+
+            var commentTrivia = SyntaxFactory.TriviaList(
+                SyntaxFactory.Comment("// TODO: use an object pool to avoid per-frame allocation"),
+                GetEndOfLine(root));
+
+            if (indentation.IsKind(SyntaxKind.WhitespaceTrivia)) commentTrivia = commentTrivia.Add(indentation);
+
+            var newStatement = statement.WithLeadingTrivia(leadingTrivia.AddRange(commentTrivia));
+            var newRoot = root.ReplaceNode(statement, newStatement);
             return document.WithSyntaxRoot(newRoot);
+        }
+
+        private static SyntaxTrivia GetEndOfLine(SyntaxNode root)
+        {
+            var existing = root.DescendantTrivia(descendIntoTrivia: true)
+                .FirstOrDefault(t => t.IsKind(SyntaxKind.EndOfLineTrivia));
+
+            return existing.IsKind(SyntaxKind.EndOfLineTrivia)
+                ? SyntaxFactory.EndOfLine(existing.ToFullString())
+                : SyntaxFactory.CarriageReturnLineFeed;
         }
     }
 }

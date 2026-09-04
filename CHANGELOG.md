@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0]
+
+### Fixed
+- The "Add pooling TODO comment" code fix produced code that does not compile. The comment was
+  attached as leading trivia of the *allocation expression*, which normally starts mid-line, so
+  `var list = new List<int>();` became
+  `var list =// TODO: use an object pool to avoid per-frame allocation new List<int>();` - a line
+  comment swallows the rest of its line, taking the initializer and the semicolon with it. The
+  comment is now attached to the enclosing `StatementSyntax`, followed by an end-of-line trivia and
+  the statement's own indentation, so it sits on its own line above the statement it describes.
+
+### Added
+- Code fix tests (`tests/ObjectPoolLinter.Tests/ObjectPoolCodeFixProviderTests.cs`), covering the
+  TODO-comment fix on a local declaration, on an expression statement (`Object.Instantiate(prefab);`),
+  and on a nested statement where the indentation differs from the method body's. One test applies
+  the fix and reparses the resulting text into a fresh compilation, asserting it has no compiler
+  errors - reparsing is what makes the assertion meaningful, since a misplaced comment stays
+  structurally valid as trivia in the already-parsed tree.
+- `Microsoft.CodeAnalysis.CSharp.CodeFix.Testing.XUnit` test dependency.
+
+### Changed
+- The inserted end-of-line trivia matches the line ending the file already uses (CRLF or LF) rather
+  than a fixed `ElasticCarriageReturnLineFeed`. Elastic trivia invites the post-fix formatting pass
+  to rewrite neighbouring lines to the workspace's own newline, which would churn line endings the
+  user never touched.
+
 ## [v0.3.1]
 
 ### Added
