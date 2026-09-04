@@ -135,18 +135,76 @@ namespace ObjectPoolLinter
         {
             methodName = string.Empty;
 
-            var method = node.Ancestors()
-                .OfType<MethodDeclarationSyntax>()
-                .FirstOrDefault();
+            var method = GetExecutingMethod(node, semanticModel);
             if (method == null) return false;
 
             var methodSymbol = semanticModel.GetDeclaredSymbol(method);
-            if (methodSymbol == null)return false;
+            if (methodSymbol == null) return false;
 
             if (!IsUnityMessage(methodSymbol)) return false;
 
             methodName = methodSymbol.Name;
             return true;
+        }
+
+        private static MethodDeclarationSyntax? GetExecutingMethod(SyntaxNode node, SemanticModel semanticModel)
+        {
+            for (var current = node.Parent; current != null; current = current.Parent)
+            {
+                switch (current)
+                {
+                    case MethodDeclarationSyntax method: return method;
+
+                    case AnonymousFunctionExpressionSyntax lambda:
+                        if (!IsInvokedInPlace(lambda)) return null;
+                        break;
+
+                    case LocalFunctionStatementSyntax localFunction:
+                        if (!IsCalledByDeclaringBody(localFunction, semanticModel)) return null;
+                        break;
+
+                    case BaseMethodDeclarationSyntax:
+                    case AccessorDeclarationSyntax:
+                    case BasePropertyDeclarationSyntax:
+                    case BaseFieldDeclarationSyntax:
+                    case BaseTypeDeclarationSyntax:
+                        return null;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsInvokedInPlace(AnonymousFunctionExpressionSyntax lambda)
+        {
+            SyntaxNode current = lambda;
+            while (current.Parent is ParenthesizedExpressionSyntax or CastExpressionSyntax)
+                current = current.Parent;
+
+            return current.Parent is InvocationExpressionSyntax invocation && invocation.Expression == current;
+        }
+
+        private static bool IsCalledByDeclaringBody(LocalFunctionStatementSyntax localFunction, SemanticModel semanticModel)
+        {
+            var localFunctionSymbol = semanticModel.GetDeclaredSymbol(localFunction);
+            if (localFunctionSymbol == null) return false;
+
+            var declaringBody = localFunction.Ancestors()
+                .FirstOrDefault(ancestor => ancestor is BaseMethodDeclarationSyntax
+                                         or AccessorDeclarationSyntax
+                                         or LocalFunctionStatementSyntax
+                                         or AnonymousFunctionExpressionSyntax);
+            if (declaringBody == null) return false;
+
+            foreach (var invocation in declaringBody.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (localFunction.Span.Contains(invocation.Span)) continue;
+
+                var invokedSymbol = semanticModel.GetSymbolInfo(invocation).Symbol;
+                if (SymbolEqualityComparer.Default.Equals(invokedSymbol, localFunctionSymbol)) return true;
+            }
+
+            return false;
         }
 
         private static bool IsUnityMessage(IMethodSymbol methodSymbol)

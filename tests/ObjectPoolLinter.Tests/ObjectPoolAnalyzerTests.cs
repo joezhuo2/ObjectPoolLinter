@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -161,6 +161,132 @@ public class MyBehaviour : MonoBehaviour
                 .WithArguments("FixedUpdate", "System.Collections.Generic.List<int>");
 
             await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task NewObjectInLambdaRegisteredAsCallback_DoesNotReport()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    public Action callback;
+
+    void Update()
+    {
+        callback = () => { var list = new System.Collections.Generic.List<int>(); };
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task NewObjectInImmediatelyInvokedLambdaInUpdate_ReportsDiagnostic()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        ((Action)(() => { var list = {|#0:new System.Collections.Generic.List<int>()|}; }))();
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("Update", "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task NewObjectInLocalFunctionCalledFromUpdate_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        Spawn();
+
+        void Spawn()
+        {
+            var list = {|#0:new System.Collections.Generic.List<int>()|};
+        }
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("Update", "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task NewObjectInLocalFunctionOnlyUsedAsDelegate_DoesNotReport()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    public Action callback;
+
+    void Update()
+    {
+        callback = Spawn;
+
+        void Spawn()
+        {
+            var list = new System.Collections.Generic.List<int>();
+        }
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task NewObjectInLocalFunctionInsideEscapingLambda_DoesNotReport()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    public Action callback;
+
+    void Update()
+    {
+        callback = () =>
+        {
+            Spawn();
+
+            void Spawn()
+            {
+                var list = new System.Collections.Generic.List<int>();
+            }
+        };
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
         }
 
         private sealed class Test : AnalyzerTest<DefaultVerifier>

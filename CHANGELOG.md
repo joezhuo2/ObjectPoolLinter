@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0]
+
+### Fixed
+- Allocations inside a lambda or anonymous method declared in a hot-path Unity message
+  are no longer attributed to that message. How often the delegate runs is decided by
+  whoever holds it, so a lambda registered as a callback in `Update()` produced a false
+  positive. A lambda that is invoked on the spot is still reported.
+- Allocations inside a local function declared in a hot-path Unity message are reported
+  only when the declaring body actually calls that local function. A local function that
+  is only converted to a delegate escapes the same way a lambda does.
+
 ## [v0.2.0]
 
 ### Fixed
@@ -28,11 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The fix now returns the document unchanged when the type cannot be resolved, or when a
   type argument printed from the symbol does not round-trip through `ParseTypeName`,
   instead of emitting a guess.
-
-### Notes
-- Constructor arguments and object/collection initializers are still dropped by the fix
-  (`new Enemy(hp)` becomes `EnemyPool.Get()`); tracked in `RELEASE_CHECKLIST.md` A1.
-- Still no `CodeFixProvider` tests, so the above is verified by inspection only.
 
 ## [v0.1.0]
 

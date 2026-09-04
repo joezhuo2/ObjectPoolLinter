@@ -19,4 +19,3 @@ When a diagnostic is reported, you can apply one of these quick fixes:
 
 1. **Replace with object pool Get()** - Replaces `new Type()` with `TypePool.Get()`
 2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling
-
