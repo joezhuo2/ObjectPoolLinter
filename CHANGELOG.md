@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.0]
+
+### Fixed
+- The "Replace with object pool Get()" code fix dropped constructor arguments: `new Enemy(hp)`
+  became `EnemyPool.Get()`, silently losing the argument. The fix now forwards the original argument
+  list to `Get()`, so `new Enemy(hp)` becomes `EnemyPool.Get(hp)` and target-typed `new(hp)` becomes
+  `EnemyPool.Get(hp)`. Arguments are copied as written, keeping named arguments, `ref`/`out`
+  modifiers and inner formatting.
+
+### Changed
+- The "Replace with object pool Get()" fix is no longer offered when the allocation has an object or
+  collection initializer (`new List<int> { 1, 2 }`). An initializer cannot be carried onto a method
+  call, so the only alternatives were to drop it or to rewrite the surrounding statement; withholding
+  the fix leaves the user with the TODO-comment fix and their code intact. Documented in the README.
+
+### Added
+- Code fix tests covering argument forwarding (single argument, named/`out` arguments, target-typed
+  `new`) and one asserting the replace fix is not registered when an initializer is present.
+
 ## [v0.4.0]
 
 ### Fixed

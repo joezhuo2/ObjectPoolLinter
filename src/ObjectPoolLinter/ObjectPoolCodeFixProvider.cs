@@ -30,7 +30,7 @@ namespace ObjectPoolLinter
 
             var node = root.FindNode(diagnosticSpan);
 
-            if (node is BaseObjectCreationExpressionSyntax objectCreation)
+            if (node is BaseObjectCreationExpressionSyntax { Initializer: null } objectCreation)
             {
                 context.RegisterCodeFix(
                     CodeAction.Create(
@@ -92,11 +92,14 @@ namespace ObjectPoolLinter
                 
             else poolName = SyntaxFactory.IdentifierName(poolIdentifier);
             
+            var argumentList = objectCreation.ArgumentList ?? SyntaxFactory.ArgumentList();
+
             var poolGet = SyntaxFactory.InvocationExpression(
                             SyntaxFactory.MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
                             poolName,
-                            SyntaxFactory.IdentifierName("Get"))
+                            SyntaxFactory.IdentifierName("Get")),
+                            argumentList.WithoutTrivia()
             ).WithTriviaFrom(objectCreation);
 
             var newRoot = root.ReplaceNode(objectCreation, poolGet);

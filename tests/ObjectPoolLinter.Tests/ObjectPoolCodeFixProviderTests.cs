@@ -199,6 +199,177 @@ public class MyBehaviour : MonoBehaviour
         }
 
         [Fact]
+        public async Task ReplaceWithPoolGet_ForwardsConstructorArguments()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = {|#0:new Enemy(10)|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = EnemyPool.Get(10);
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_ForwardsNamedAndOutArguments()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp, string name, out bool ok) { ok = true; }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp, string name, out bool ok) { ok = true; return null; }
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = {|#0:new Enemy(10, name: ""goblin"", ok: out var ok)|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp, string name, out bool ok) { ok = true; }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp, string name, out bool ok) { ok = true; return null; }
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = EnemyPool.Get(10, name: ""goblin"", ok: out var ok);
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_ForwardsArgumentsOfTargetTypedNew()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        Enemy enemy = {|#0:new(10)|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        Enemy enemy = EnemyPool.Get(10);
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenAnInitializerIsPresent()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var list = new System.Collections.Generic.List<int> { 1, 2 };
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
         public async Task AddPoolingComment_FixedDocumentHasNoCompilerErrors()
         {
             var source = @"
@@ -218,9 +389,6 @@ public class MyBehaviour : MonoBehaviour
 
             Assert.Contains("// TODO: use an object pool to avoid per-frame allocation", text);
 
-            // Compile the fixed *text*, not the fixed document's syntax tree. A comment attached as
-            // trivia keeps the tree structurally valid however it is placed, so only reparsing shows
-            // whether the text a user would end up with still compiles.
             var reparsed = fixedDocument.Project
                 .RemoveDocument(fixedDocument.Id)
                 .AddDocument(fixedDocument.Name, text)
@@ -236,6 +404,24 @@ public class MyBehaviour : MonoBehaviour
         }
 
         private static async Task<Document> ApplyAddPoolingCommentFixAsync(string source)
+        {
+            var (document, actions) = await RegisterFixesCoreAsync(source);
+
+            var commentAction = Assert.Single(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+
+            var operations = await commentAction.GetOperationsAsync(CancellationToken.None);
+            var changedSolution = operations.OfType<ApplyChangesOperation>().Single().ChangedSolution;
+
+            return changedSolution.GetDocument(document.Id)!;
+        }
+
+        private static async Task<List<CodeAction>> RegisterFixesAsync(string source)
+        {
+            var (_, actions) = await RegisterFixesCoreAsync(source);
+            return actions;
+        }
+
+        private static async Task<(Document Document, List<CodeAction> Actions)> RegisterFixesCoreAsync(string source)
         {
             using var workspace = new AdhocWorkspace();
 
@@ -263,12 +449,7 @@ public class MyBehaviour : MonoBehaviour
 
             await new ObjectPoolCodeFixProvider().RegisterCodeFixesAsync(context);
 
-            var commentAction = Assert.Single(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
-
-            var operations = await commentAction.GetOperationsAsync(CancellationToken.None);
-            var changedSolution = operations.OfType<ApplyChangesOperation>().Single().ChangedSolution;
-
-            return changedSolution.GetDocument(document.Id)!;
+            return (document, actions);
         }
 
         private sealed class Test : CodeFixTest<DefaultVerifier>
