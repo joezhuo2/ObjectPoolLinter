@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.0]
+
+### Fixed
+- The "Replace with object pool Get()" code fix invented a pool type out of the allocated type's
+  name and emitted a call to it without checking that anything by that name existed. `new Enemy()`
+  became `EnemyPool.Get()` even when no `EnemyPool` was in scope, replacing a working line with an
+  unresolved reference. The fix now resolves the candidate `{Type}Pool` name from the allocation site
+  before offering itself: a type with that name must be visible there, its generic arity must match
+  the name being generated (so `ListPool<T>` matches `new List<int>()` while a non-generic `ListPool`
+  does not), and it must expose a static `Get` that is accessible from the call site and can accept
+  the number of constructor arguments being forwarded (accounting for optional and `params`
+  parameters). When no such type is found the fix is not registered and only the TODO-comment fix is
+  offered, leaving the user's code intact.
+
+### Changed
+- Pool name construction and validation moved into a single `TryGetPoolName` helper used both when
+  registering the fix and when applying it, so the offer and the resulting edit cannot disagree about
+  which pool type they mean.
+
+### Added
+- Code fix tests asserting the replace fix is withheld when no pool type exists, when the pool's
+  `Get` is not static, when it is inaccessible (`private`), when the pool's generic arity differs
+  from the allocated type's, and when `Get` cannot take the constructor arguments being forwarded.
+
 ## [v0.5.0]
 
 ### Fixed

@@ -32,12 +32,18 @@ namespace ObjectPoolLinter
 
             if (node is BaseObjectCreationExpressionSyntax { Initializer: null } objectCreation)
             {
-                context.RegisterCodeFix(
-                    CodeAction.Create(
-                        title: "Replace with object pool Get()",
-                        createChangedDocument: c => ReplaceWithPoolGetAsync(context.Document, objectCreation, c),
-                        equivalenceKey: "ObjectPoolLinterReplaceWithPoolGet"),
-                    diagnostic);
+                var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
+
+                if (semanticModel != null &&
+                    TryGetPoolName(semanticModel, objectCreation, context.CancellationToken, out _))
+                {
+                    context.RegisterCodeFix(
+                        CodeAction.Create(
+                            title: "Replace with object pool Get()",
+                            createChangedDocument: c => ReplaceWithPoolGetAsync(context.Document, objectCreation, c),
+                            equivalenceKey: "ObjectPoolLinterReplaceWithPoolGet"),
+                        diagnostic);
+                }
             }
 
             context.RegisterCodeFix(
@@ -59,39 +65,9 @@ namespace ObjectPoolLinter
             var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
             if (semanticModel == null) return document;
 
-            var typeSyntax = (objectCreation as ObjectCreationExpressionSyntax)?.Type;
-            var typeSymbol = (typeSyntax != null 
-                    ? semanticModel.GetSymbolInfo(typeSyntax, cancellationToken).Symbol as INamedTypeSymbol 
-                    : null)
-                ?? semanticModel.GetTypeInfo(objectCreation, cancellationToken).Type as INamedTypeSymbol;
-            
-            if (typeSymbol == null || typeSymbol.TypeKind == TypeKind.Error) return document;
+            if (!TryGetPoolName(semanticModel, objectCreation, cancellationToken, out var poolName) || poolName == null)
+                return document;
 
-            var poolIdentifier = SyntaxFactory.Identifier(typeSymbol.Name + "Pool");
-
-            SimpleNameSyntax poolName;
-            if (typeSyntax is GenericNameSyntax generic)
-                poolName = SyntaxFactory.GenericName(poolIdentifier)
-                            .WithTypeArgumentList(generic.TypeArgumentList);
-            else if (typeSyntax is QualifiedNameSyntax { Right: GenericNameSyntax q })
-                poolName = SyntaxFactory.GenericName(poolIdentifier)
-                            .WithTypeArgumentList(q.TypeArgumentList);
-            else if (typeSymbol.IsGenericType)
-            {
-                var typeArguments = typeSymbol.TypeArguments
-                    .Select(t => SyntaxFactory.ParseTypeName(
-                        t.ToMinimalDisplayString(semanticModel, objectCreation.SpanStart)))
-                    .ToArray();
-
-                if (typeArguments.Any(a => a.ContainsDiagnostics)) return document;
-
-                poolName = SyntaxFactory.GenericName(poolIdentifier)
-                    .WithTypeArgumentList(SyntaxFactory.TypeArgumentList(
-                        SyntaxFactory.SeparatedList<TypeSyntax>(typeArguments)));
-            }
-                
-            else poolName = SyntaxFactory.IdentifierName(poolIdentifier);
-            
             var argumentList = objectCreation.ArgumentList ?? SyntaxFactory.ArgumentList();
 
             var poolGet = SyntaxFactory.InvocationExpression(
@@ -104,6 +80,96 @@ namespace ObjectPoolLinter
 
             var newRoot = root.ReplaceNode(objectCreation, poolGet);
             return document.WithSyntaxRoot(newRoot);
+        }
+
+        private static bool TryGetPoolName(
+            SemanticModel semanticModel,
+            BaseObjectCreationExpressionSyntax objectCreation,
+            CancellationToken cancellationToken,
+            out SimpleNameSyntax? poolName)
+        {
+            poolName = null;
+
+            var typeSyntax = (objectCreation as ObjectCreationExpressionSyntax)?.Type;
+            var typeSymbol = (typeSyntax != null
+                    ? semanticModel.GetSymbolInfo(typeSyntax, cancellationToken).Symbol as INamedTypeSymbol
+                    : null)
+                ?? semanticModel.GetTypeInfo(objectCreation, cancellationToken).Type as INamedTypeSymbol;
+
+            if (typeSymbol == null || typeSymbol.TypeKind == TypeKind.Error) return false;
+
+            var poolIdentifier = SyntaxFactory.Identifier(typeSymbol.Name + "Pool");
+
+            SimpleNameSyntax candidate;
+            if (typeSyntax is GenericNameSyntax generic)
+                candidate = SyntaxFactory.GenericName(poolIdentifier)
+                            .WithTypeArgumentList(generic.TypeArgumentList);
+            else if (typeSyntax is QualifiedNameSyntax { Right: GenericNameSyntax q })
+                candidate = SyntaxFactory.GenericName(poolIdentifier)
+                            .WithTypeArgumentList(q.TypeArgumentList);
+            else if (typeSymbol.IsGenericType)
+            {
+                var typeArguments = typeSymbol.TypeArguments
+                    .Select(t => SyntaxFactory.ParseTypeName(
+                        t.ToMinimalDisplayString(semanticModel, objectCreation.SpanStart)))
+                    .ToArray();
+
+                if (typeArguments.Any(a => a.ContainsDiagnostics)) return false;
+
+                candidate = SyntaxFactory.GenericName(poolIdentifier)
+                    .WithTypeArgumentList(SyntaxFactory.TypeArgumentList(
+                        SyntaxFactory.SeparatedList<TypeSyntax>(typeArguments)));
+            }
+
+            else candidate = SyntaxFactory.IdentifierName(poolIdentifier);
+
+            var arity = candidate is GenericNameSyntax poolGeneric
+                ? poolGeneric.TypeArgumentList.Arguments.Count
+                : 0;
+
+            var argumentCount = objectCreation.ArgumentList?.Arguments.Count ?? 0;
+
+            if (!PoolTypeIsUsable(semanticModel, objectCreation.SpanStart, poolIdentifier.ValueText, arity, argumentCount))
+                return false;
+
+            poolName = candidate;
+            return true;
+        }
+
+        private static bool PoolTypeIsUsable(
+            SemanticModel semanticModel,
+            int position,
+            string poolTypeName,
+            int arity,
+            int argumentCount)
+        {
+            foreach (var symbol in semanticModel.LookupNamespacesAndTypes(position, name: poolTypeName))
+            {
+                if (symbol is not INamedTypeSymbol poolType || poolType.Arity != arity) continue;
+
+                foreach (var member in poolType.GetMembers("Get"))
+                {
+                    if (member is not IMethodSymbol getMethod || !getMethod.IsStatic) continue;
+                    if (!semanticModel.IsAccessible(position, getMethod)) continue;
+                    if (!AcceptsArgumentCount(getMethod, argumentCount)) continue;
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool AcceptsArgumentCount(IMethodSymbol method, int argumentCount)
+        {
+            var parameters = method.Parameters;
+
+            if (parameters.Length > 0 && parameters[parameters.Length - 1].IsParams)
+                return argumentCount >= parameters.Length - 1;
+
+            if (argumentCount > parameters.Length) return false;
+
+            return argumentCount >= parameters.Count(p => !p.IsOptional);
         }
 
         private static async Task<Document> AddPoolingCommentAsync(

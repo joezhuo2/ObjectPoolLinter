@@ -370,6 +370,148 @@ public class MyBehaviour : MonoBehaviour
         }
 
         [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenNoPoolTypeExists()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = new Enemy();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenPoolGetIsNotStatic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public class EnemyPool
+{
+    public Enemy Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = new Enemy();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenPoolGetIsInaccessible()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public class EnemyPool
+{
+    private static Enemy Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = new Enemy();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenPoolArityDiffers()
+        {
+            var source = @"
+using UnityEngine;
+
+public class ListPool
+{
+    public static System.Collections.Generic.List<int> Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenPoolGetCannotTakeTheConstructorArguments()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = new Enemy(10);
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
         public async Task AddPoolingComment_FixedDocumentHasNoCompilerErrors()
         {
             var source = @"
