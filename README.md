@@ -1,5 +1,7 @@
 # ObjectPoolLinter
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A Roslyn analyzer for Unity C# that detects object allocations in hot paths (like `Update`, `FixedUpdate`, etc.) and suggests using object pools to avoid garbage collection pressure and frame hitches.
 
 ## Features
@@ -28,3 +30,7 @@ The fix is **not** offered when the allocation carries an object or collection i
 (`new Enemy { Hp = 5 }`, `new List<int> { 1, 2 }`), because an initializer cannot be attached to a
 method call and dropping it would silently lose code. Use the TODO-comment fix there and rewrite the
 initializer by hand.
+
+## License
+
+MIT - see [LICENSE](LICENSE).

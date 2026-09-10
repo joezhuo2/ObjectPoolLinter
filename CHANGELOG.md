@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.3]
+
+### Added
+- `LICENSE` at the repository root: the MIT License text. The project file already declared
+  `PackageLicenseExpression=MIT`, but the repository itself carried no license text, so by default it was all rights reserved and nobody could legally use it. The license file is also packed at the package root.
+- README: an MIT license badge under the title and a `License` section.
+
 ## [v0.6.2]
 
 ### Added
