@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.2]
+
+### Added
+- NuGet package metadata on the analyzer project: `PackageId`, an explicit `Version`, `Authors`,
+  `Copyright`, `Description`, `PackageTags`, `PackageProjectUrl`, `RepositoryUrl`, `RepositoryType`,
+  `PackageReadmeFile` (the README is now packed at the package root) and
+  `PackageLicenseExpression` (`MIT`).
+- `DevelopmentDependency=true` and `PackageType=Analyzer`, so consumers no longer pick up the
+  analyzer as a transitive runtime dependency.
+
+### Changed
+- The package version is now stated in the project file instead of being left unset, where NuGet
+  silently stamped `1.0.0`. The `Release 1.0.0` heading in `AnalyzerReleases.Shipped.md` is therefore
+  no longer accidentally consistent with the package version and still needs to be reconciled.
+- `SuppressDependenciesWhenPacking=true`: the package carries no `lib/`, so the otherwise-empty
+  `netstandard2.0` dependency group tripped NU5128 on every `dotnet pack`.
+
 ## [v0.6.1]
 
 ### Fixed

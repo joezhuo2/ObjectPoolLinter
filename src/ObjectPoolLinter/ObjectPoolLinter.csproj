@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
@@ -9,8 +9,26 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <PackageId>ObjectPoolLinter</PackageId>
+    <Version>0.6.2</Version>
+    <Authors>Joe Zhuo</Authors>
+    <Copyright>Copyright (c) Joe Zhuo</Copyright>
+    <Description>Roslyn analyzer for Unity C# that flags object allocations in hot paths and offers code fixes that route them through an object pool, minimizing GC and frame hitches.</Description>
+    <PackageTags>roslyn;analyzer;analyzers;unity;performance;allocation;object-pool;gc;codefix</PackageTags>
+    <PackageProjectUrl>https://github.com/joezhuo2/ObjectPoolLinter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/joezhuo2/ObjectPoolLinter.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <PackageType>Analyzer</PackageType>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+
   <ItemGroup>
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
