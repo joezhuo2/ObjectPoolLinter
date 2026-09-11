@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ObjectPoolLinter\ObjectPoolLinter.csproj" />
+    <ProjectReference Include="..\..\src\ObjectPoolLinter.CodeFixes\ObjectPoolLinter.CodeFixes.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddAnalyzersToOutput</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>ObjectPoolLinter</PackageId>
+    <Version>0.6.4</Version>
+    <Authors>Joe Zhuo</Authors>
+    <Copyright>Copyright (c) 2026 Joe Zhuo</Copyright>
+    <Description>Roslyn analyzer for Unity C# that flags object allocations in hot paths and offers code fixes that route them through an object pool, minimizing GC and frame hitches.</Description>
+    <PackageTags>roslyn;analyzer;analyzers;unity;performance;allocation;object-pool;gc;codefix</PackageTags>
+    <PackageProjectUrl>https://github.com/joezhuo2/ObjectPoolLinter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/joezhuo2/ObjectPoolLinter.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <PackageType>Analyzer</PackageType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ObjectPoolLinter\ObjectPoolLinter.csproj" />
+    <ProjectReference Include="..\ObjectPoolLinter.CodeFixes\ObjectPoolLinter.CodeFixes.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <Target Name="_AddAnalyzersToOutput">
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(OutputPath)\ObjectPoolLinter.dll" PackagePath="analyzers/dotnet/cs" />
+      <TfmSpecificPackageFile Include="$(OutputPath)\ObjectPoolLinter.CodeFixes.dll" PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>

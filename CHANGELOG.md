@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.4]
+
+### Changed
+- The analyzer and the code fix are now separate assemblies. `ObjectPoolLinter.dll` holds only the
+  analyzer and references `Microsoft.CodeAnalysis.CSharp`; `ObjectPoolLinter.CodeFixes.dll`
+  (`src/ObjectPoolLinter.CodeFixes`) holds the code fix and is the only one that references
+  `Microsoft.CodeAnalysis.CSharp.Workspaces`. Workspaces is IDE-only and absent from compiler hosts
+  such as Unity's, so an analyzer that hard-referenced it risked failing to load outside an IDE.
+- Packing moved to a new `src/ObjectPoolLinter.Package` project, which ships both DLLs under
+  `analyzers/dotnet/cs` along with the README and LICENSE. Build the package with
+  `dotnet pack src/ObjectPoolLinter.Package -c Release`. The package ID stays `ObjectPoolLinter`;
+  the analyzer project's own (unpacked) package ID is now `ObjectPoolLinter.Analyzer` so NuGet
+  restore does not see two projects with the same ID.
+- The sample project and the tests reference the code fix project alongside the analyzer.
+
 ## [v0.6.3]
 
 ### Added
