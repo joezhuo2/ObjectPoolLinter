@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.5]
+
+### Changed
+- Lowered the Roslyn reference from `Microsoft.CodeAnalysis.* 4.8.0` to `3.8.0` in the analyzer and
+  code fix projects. 4.8.0 kept the analyzer from loading in any host older than Roslyn 4.8,
+  including Unity 2021.3 and 2022.3, whose documentation requires Roslyn plugins built against 3.8.
+  3.8 is the lowest version the code compiles against, because the analyzer handles C# 9 target-typed `new()`.
+  The tests still run on Roslyn 4.8.0, so they exercise the analyzer in a newer host.
+- README: a `Requirements` section that states the Roslyn 3.8 floor and which hosts it covers.
+
 ## [v0.6.4]
 
 ### Changed
