@@ -1,9 +1,57 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [v0.8.0]
+
+### Fixed
+- `IsUnityMessage` matched on method name alone, so any method named `Update`,
+  `OnTriggerStay`, `OnAnimatorIK` and so on was treated as a hot path even when Unity could never
+  call it. A user-defined `void Update(float deltaTime)`, a `static void Update()` or a
+  `void Update<T>()` on a `MonoBehaviour` all produced false OPL001 warnings.
+
+  `HotPathMethodNames` is replaced by `HotPathMessageSignatures`, which maps each message to its
+  Unity-declared parameter list: `OnTriggerStay(Collider)`, `OnTriggerStay2D(Collider2D)`,
+  `OnCollisionStay(Collision)`, `OnCollisionStay2D(Collision2D)`, `OnAnimatorIK(int)`, and every
+  other supported message parameterless. A candidate must now match arity and parameter type
+  exactly, and `static`, generic and `ref`/`out`-parameter methods are rejected — Unity's
+  reflection-based dispatch invokes none of them.
+
+  Parameter types are matched by full display string (`UnityEngine.Collider`), except `int`, which
+  is matched by `SpecialType.System_Int32`. Note that the namespace check itself is still the
+  last-segment comparison tracked as A3; this change does not address that.
+
+- 10 analyzer tests added for the new signature rules (35 total, up from 25); the Unity stub in the
+  test project gained `Collider`, `Collider2D`, `Collision` and `Collision2D`.
+
+## [v0.7.1]
+
+### Added
+- SourceLink, debug symbols and deterministic builds, none of which the package had. A consumer who
+  stepped into the analyzer from a debugger got no source, and nothing tied a shipped DLL back to the
+  commit it was built from.
+  - `Directory.Build.props` (new, repo-wide): `PublishRepositoryUrl`, `EmbedUntrackedSources`,
+    `DebugType=portable` and `Deterministic`, plus `ContinuousIntegrationBuild` gated on `CI=true`.
+    The gate matters: path normalization to the `/_/` prefix is correct for a published build and
+    wrong for a local one, where it breaks source resolution against the working tree.
+  - `IncludeSymbols` + `SymbolPackageFormat=snupkg` on the package project, so `dotnet pack` now
+    emits `ObjectPoolLinter.<version>.snupkg` alongside the `.nupkg` for publication to the NuGet
+    symbol server.
+  - The `.nuspec` now carries `<repository>` with the branch and commit SHA, and the analyzer PDBs
+    carry a SourceLink document map pointing at `raw.githubusercontent.com` at that SHA.
+- SourceLink is not referenced as a package. The .NET 8+ SDK imports `Microsoft.SourceLink.GitHub`
+  in-box, and adding the 8.0.0 `PackageReference` on top of it only pulled in a
+  `Microsoft.Build.Tasks.Git` with a known advisory (NU1902) — a problem once CI builds with
+  `-warnaserror` (C1).
+- Because the package project sets `IncludeBuildOutput=false`, NuGet skips symbol collection
+  entirely (`_GetDebugSymbolsWithTfm` is gated on it, which also rules out
+  `TfmSpecificDebugSymbolsFile`). The analyzer PDBs are listed as ordinary package files instead;
+  they reach the `.snupkg`, and as a side effect also stay in the `.nupkg`.
+- Verified: two `CI=true` builds of the analyzer produce byte-identical `.dll` and `.pdb`; the CI
+  PDB normalizes source paths to `/_/` while the local one does not; 25/25 tests pass.
 
 ## [v0.7.0]
 

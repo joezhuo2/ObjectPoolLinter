@@ -1,0 +1,31 @@
+<Project>
+
+  <!--
+    Repo-wide build settings. Applies to src/, tests/ and samples/.
+
+    SourceLink and deterministic output exist so that a consumer who steps into the
+    analyzer from a debugger lands on the exact source revision the DLL was built
+    from, and so that two builds of the same commit produce byte-identical output.
+
+    SourceLink itself is not referenced as a package: the .NET 8+ SDK imports
+    Microsoft.SourceLink.GitHub in-box (Microsoft.NET.Sdk.SourceLink.targets), so an
+    explicit PackageReference would only re-add an older, vulnerable
+    Microsoft.Build.Tasks.Git (NU1902).
+  -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>portable</DebugType>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!--
+    Only a CI build may normalize source paths to the deterministic /_/ prefix:
+    doing it locally breaks debugger source resolution against the working tree.
+    GitHub Actions, Azure Pipelines and most other hosts set CI=true.
+  -->
+  <PropertyGroup Condition="'$(CI)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

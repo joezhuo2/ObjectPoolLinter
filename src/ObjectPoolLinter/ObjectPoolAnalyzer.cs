@@ -1,4 +1,5 @@
-﻿using System.Collections.Immutable;
+﻿using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -27,27 +28,32 @@ namespace ObjectPoolLinter
             description: Description
         );
 
-        private static readonly ImmutableHashSet<string> HotPathMethodNames =
-            ImmutableHashSet.Create(
-                "Update",
-                "FixedUpdate",
-                "LateUpdate",
-                "OnGUI",
-                "OnTriggerStay",
-                "OnTriggerStay2D",
-                "OnCollisionStay",
-                "OnCollisionStay2D",
-                "OnMouseOver",
-                "OnMouseDrag",
-                "OnAnimatorMove",
-                "OnAnimatorIK",
-                "OnRenderObject",
-                "OnWillRenderObject",
-                "OnPreRender",
-                "OnPostRender",
-                "OnDrawGizmos",
-                "OnDrawGizmosSelected"
-            );
+        private const string NoParameters = "";
+
+        // Unity dispatches messages by exact signature: the wrong arity or parameter type
+        // means the method is never called, so it is not a hot path.
+        private static readonly ImmutableDictionary<string, string> HotPathMessageSignatures =
+            new Dictionary<string, string>(System.StringComparer.Ordinal)
+            {
+                ["Update"] = NoParameters,
+                ["FixedUpdate"] = NoParameters,
+                ["LateUpdate"] = NoParameters,
+                ["OnGUI"] = NoParameters,
+                ["OnTriggerStay"] = "UnityEngine.Collider",
+                ["OnTriggerStay2D"] = "UnityEngine.Collider2D",
+                ["OnCollisionStay"] = "UnityEngine.Collision",
+                ["OnCollisionStay2D"] = "UnityEngine.Collision2D",
+                ["OnMouseOver"] = NoParameters,
+                ["OnMouseDrag"] = NoParameters,
+                ["OnAnimatorMove"] = NoParameters,
+                ["OnAnimatorIK"] = "int",
+                ["OnRenderObject"] = NoParameters,
+                ["OnWillRenderObject"] = NoParameters,
+                ["OnPreRender"] = NoParameters,
+                ["OnPostRender"] = NoParameters,
+                ["OnDrawGizmos"] = NoParameters,
+                ["OnDrawGizmosSelected"] = NoParameters,
+            }.ToImmutableDictionary(System.StringComparer.Ordinal);
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
@@ -209,7 +215,13 @@ namespace ObjectPoolLinter
 
         private static bool IsUnityMessage(IMethodSymbol methodSymbol)
         {
-            if (!HotPathMethodNames.Contains(methodSymbol.Name)) return false;
+            if (!HotPathMessageSignatures.TryGetValue(methodSymbol.Name, out var expectedParameterType))
+                return false;
+
+            // Unity only invokes instance messages, and never a generic method definition.
+            if (methodSymbol.IsStatic || methodSymbol.IsGenericMethod) return false;
+
+            if (!HasExpectedParameters(methodSymbol, expectedParameterType)) return false;
 
             var containingType = methodSymbol.ContainingType;
             while (containingType != null)
@@ -224,6 +236,24 @@ namespace ObjectPoolLinter
             }
 
             return false;
+        }
+
+        private static bool HasExpectedParameters(IMethodSymbol methodSymbol, string expectedParameterType)
+        {
+            var parameters = methodSymbol.Parameters;
+
+            if (expectedParameterType.Length == 0)
+                return parameters.Length == 0;
+
+            if (parameters.Length != 1) return false;
+
+            var parameter = parameters[0];
+            if (parameter.RefKind != RefKind.None) return false;
+
+            if (expectedParameterType.Equals("int", System.StringComparison.Ordinal))
+                return parameter.Type.SpecialType == SpecialType.System_Int32;
+
+            return parameter.Type.ToDisplayString().Equals(expectedParameterType, System.StringComparison.Ordinal);
         }
     }
 }

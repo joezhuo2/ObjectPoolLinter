@@ -23,6 +23,11 @@ namespace UnityEngine
     public struct Vector3 { }
     public struct Quaternion { }
 
+    public class Collider : Object { }
+    public class Collider2D : Object { }
+    public class Collision { }
+    public class Collision2D { }
+
     public class MonoBehaviour : Object
     {
     }
@@ -282,6 +287,198 @@ public class MyBehaviour : MonoBehaviour
                 var list = new System.Collections.Generic.List<int>();
             }
         };
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task UpdateWithParameters_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update(float deltaTime)
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task StaticUpdate_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    static void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task GenericUpdate_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update<T>()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task OnTriggerStayWithCollider_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void OnTriggerStay(Collider other)
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithSpan(8, 20, 8, 62)
+                .WithArguments("OnTriggerStay", "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task OnTriggerStayWithoutParameter_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void OnTriggerStay()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task OnTriggerStayWithWrongParameterType_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void OnTriggerStay(Collider2D other)
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task OnCollisionStay2DWithCollision2D_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void OnCollisionStay2D(Collision2D collision)
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithSpan(8, 20, 8, 62)
+                .WithArguments("OnCollisionStay2D", "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task OnAnimatorIKWithLayerIndex_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void OnAnimatorIK(int layerIndex)
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithSpan(8, 20, 8, 62)
+                .WithArguments("OnAnimatorIK", "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task OnAnimatorIKWithWrongParameterType_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void OnAnimatorIK(float layerIndex)
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task UpdateWithRefParameter_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void OnAnimatorIK(ref int layerIndex)
+    {
+        var list = new System.Collections.Generic.List<int>();
     }
 }
 ";
