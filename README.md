@@ -24,6 +24,84 @@ the minimum supported version. They load in any compiler or IDE that ships Rosly
 Hosts older than Roslyn 3.8 are not supported: the analyzer recognizes C# 9 target-typed `new()`,
 which Roslyn 3.8 introduced.
 
+## Installation
+
+### Unity
+
+Unity does not read NuGet packages, so the analyzer ships as Unity artifacts on the
+[releases page](https://github.com/joezhuo2/ObjectPoolLinter/releases): a `.unitypackage` and a UPM
+tarball (`com.joezhuo.objectpoollinter-<version>.tgz`). Both contain the same two DLLs with the
+`RoslynAnalyzer` asset label and every platform disabled. Pick one:
+
+**`.unitypackage`** — download it, then `Assets > Import Package > Custom Package...` and import.
+The files land in `Assets/Plugins/ObjectPoolLinter/`.
+
+**UPM tarball** — download it, then `Window > Package Manager > + > Install package from tarball...`.
+Keep the `.tgz` inside your project (a folder such as `Packages/tarballs/`) or somewhere every
+machine on the team can reach, because Unity records the path to the file, not a copy of it.
+
+**Manual drop-in** — if you would rather not use either artifact, copy `ObjectPoolLinter.dll` and
+`ObjectPoolLinter.CodeFixes.dll` (from the NuGet package's `analyzers/dotnet/cs/`, or from
+`src/*/bin/Release/netstandard2.0/` after a local build) into a folder under `Assets/`, then for
+each DLL in the Inspector:
+
+1. Under `Select platforms for plugin`, clear **Any Platform** and leave every individual platform,
+   including **Editor**, unchecked. Unity has to hand the DLL to the compiler rather than build it
+   into a player or load it in the Editor.
+2. Clear **Validate References**.
+3. At the bottom of the Inspector, open the label picker and add the label `RoslynAnalyzer`, spelled
+   exactly that way.
+4. Click **Apply**.
+
+Unity recompiles and OPL001 appears in the Console.
+
+**Tested on Unity 6000.4.6f1** (Unity 6), where both artifacts import cleanly and OPL001 is reported
+during a batch-mode compile. The analyzer targets Roslyn 3.8, which Unity's documentation names as
+the required version for Roslyn plugins on 2021.3 and 2022.3, so the UPM package declares
+`"unity": "2021.3"` as its minimum — but 2021.3 and 2022.3 have not been verified here.
+
+#### Scoping the analyzer
+
+A Roslyn analyzer applies to the assembly definition in its own folder or in the closest folder
+above it. Imported at `Assets/Plugins/ObjectPoolLinter/` with no `.asmdef` alongside it, it applies
+to Unity's predefined assemblies (`Assembly-CSharp` and friends). To cover your own assembly
+definitions, either copy the DLLs into the folder of each `.asmdef` you want analyzed, or reference
+the analyzer DLLs from those assembly definitions.
+
+The UPM package contains no `.asmdef` either, so the packaged form also covers the predefined
+assemblies.
+
+#### Turning the rule off
+
+Add `dotnet_diagnostic.OPL001.severity = none` to a `.editorconfig` at the project root, or wrap a
+single allocation in `#pragma warning disable OPL001`.
+
+### Unity code compiled outside the editor
+
+Projects that reference the UnityEngine assemblies but build with `dotnet` — CI compile checks,
+test harnesses, generated `.csproj` files — can take the analyzer from NuGet:
+
+```
+dotnet add package ObjectPoolLinter
+```
+
+This adds it as an analyzer reference, so the rule runs on every build with no extra wiring. The
+package is not yet on nuget.org; until the first tagged release, reference the projects directly
+(see `samples/SampleUnityCode/SampleUnityCode.csproj`) or use the Unity artifacts above.
+
+OPL001 only fires on types deriving from `UnityEngine.MonoBehaviour`, so a project with no
+UnityEngine reference gets no diagnostics.
+
+### Building the Unity artifacts yourself
+
+```
+pwsh build/pack-unity.ps1
+```
+
+Writes `ObjectPoolLinter-<version>.unitypackage` and `com.joezhuo.objectpoollinter-<version>.tgz`
+to `artifacts/unity/`. The version comes from
+`src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj`.
+
 ## Usage
 
 The analyzer runs automatically during build and in IDEs that support Roslyn analyzers (Visual Studio, VS Code with C# Dev Kit, Rider).

@@ -1,0 +1,22 @@
+{
+  "name": "com.joezhuo.objectpoollinter",
+  "version": "__VERSION__",
+  "displayName": "ObjectPoolLinter",
+  "description": "Roslyn analyzer for Unity C# that flags object allocations in hot paths (Update, FixedUpdate, OnTriggerStay, ...) and offers code fixes that route them through an object pool.",
+  "unity": "2021.3",
+  "keywords": [
+    "roslyn",
+    "analyzer",
+    "performance",
+    "allocation",
+    "object-pool",
+    "gc"
+  ],
+  "author": {
+    "name": "Joe Zhuo",
+    "url": "https://github.com/joezhuo2/ObjectPoolLinter"
+  },
+  "documentationUrl": "https://github.com/joezhuo2/ObjectPoolLinter#readme",
+  "changelogUrl": "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/LICENSE"
+}

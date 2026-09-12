@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.0]
+
+### Added
+- A Unity install path, which the project did not have: Unity does not consume NuGet analyzers, so
+  the NuGet package alone left Unity users with nothing to install.
+  - `build/pack-unity.ps1` builds two artifacts into `artifacts/unity/`: a `.unitypackage` that
+    imports the analyzer into `Assets/Plugins/ObjectPoolLinter/`, and a UPM tarball
+    (`com.joezhuo.objectpoollinter-<version>.tgz`) installable through
+    `Package Manager > Install package from tarball`. Both carry `ObjectPoolLinter.dll` and
+    `ObjectPoolLinter.CodeFixes.dll` with generated `.meta` files that apply the `RoslynAnalyzer`
+    label, disable every platform including Editor, and clear `validateReferences`. Asset GUIDs are
+    derived from the asset path, so reimporting an upgrade replaces the previous assets in place.
+  - `unity/package.json.in` and `unity/README.md`: the UPM manifest template (the version is stamped
+    in from the package project at pack time) and the package description Unity shows in the Package
+    Manager. The package deliberately contains no `.asmdef`, so it applies to Unity's predefined
+    assemblies.
+  - README: an `Installation` section covering both artifacts, the manual drop-in procedure with the
+    exact importer settings, how analyzer scoping interacts with assembly definitions, how to
+    silence OPL001, and how to build the artifacts locally.
+- Verified on **Unity 6000.4.6f1**: both artifacts import without errors and a batch-mode compile
+  reports OPL001 for an allocation in `Update` and not for one in `Start`. The UPM manifest declares
+  `"unity": "2021.3"`, matching Unity's documented Roslyn 3.8 requirement for 2021.3 and 2022.3, but
+  those versions are untested and the README says so.
+
 ## [v0.6.5]
 
 ### Changed
