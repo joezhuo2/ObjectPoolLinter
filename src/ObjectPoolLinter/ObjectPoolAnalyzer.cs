@@ -18,6 +18,10 @@ namespace ObjectPoolLinter
         private static readonly LocalizableString MessageFormat = "'{1}' is allocated inside the frequently-called method '{0}'. Consider using an object pool to avoid per-frame allocations.";
         private static readonly LocalizableString Description = "Allocating objects inside frequently-invoked Unity methods (such as Update) causes garbage collection pressure and frame hitches. Reuse instances via an object pool instead.";
 
+        // Points at the default branch rather than a tag: a shipped analyzer keeps linking to the
+        // current documentation for the rule, which is what a reader clicking the IDE lightbulb wants.
+        internal const string HelpLinkUri = "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/docs/rules/OPL001.md";
+
         private static readonly DiagnosticDescriptor Rule = new(
             DiagnosticId,
             Title,
@@ -25,7 +29,8 @@ namespace ObjectPoolLinter
             Category,
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
-            description: Description
+            description: Description,
+            helpLinkUri: HelpLinkUri
         );
 
         private const string MonoBehaviourMetadataName = "UnityEngine.MonoBehaviour";

@@ -62,6 +62,17 @@ namespace UnityEngine
         }
 
         [Fact]
+        public void Descriptor_HasHelpLinkToTheRuleDoc()
+        {
+            var descriptor = Assert.Single(new ObjectPoolAnalyzer().SupportedDiagnostics);
+
+            Assert.Equal(ObjectPoolAnalyzer.DiagnosticId, descriptor.Id);
+            Assert.Equal(
+                "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/docs/rules/OPL001.md",
+                descriptor.HelpLinkUri);
+        }
+
+        [Fact]
         public async Task NewObjectInUpdate_ReportsDiagnostic()
         {
             var source = @"

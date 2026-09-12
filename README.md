@@ -106,6 +106,9 @@ to `artifacts/unity/`. The version comes from
 
 The analyzer runs automatically during build and in IDEs that support Roslyn analyzers (Visual Studio, VS Code with C# Dev Kit, Rider).
 
+The rule it reports is documented in [docs/rules/OPL001.md](docs/rules/OPL001.md), which also covers
+how to change its severity or suppress it.
+
 ### Code Fixes
 
 When a diagnostic is reported, you can apply one of these quick fixes:
