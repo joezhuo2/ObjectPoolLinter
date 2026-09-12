@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.5]
+
+### Changed
+- The "Add pooling TODO comment" fix now uses array-specific wording on `new int[4]` / `new[] { 1, 2 }`,
+  pointing at `ArrayPool<T>.Shared` and naming its two gotchas instead of suggesting an object pool
+  that does not apply to arrays.
+
+### Documentation
+- Documented why array allocations get no automatic replacement fix: `ArrayPool<T>.Shared.Rent(n)`
+  returns an array of length *at least* `n`, so substituting it changes the behaviour of any code that
+  reads `Length`, and the rented buffer has to be returned on every exit path. `docs/rules/OPL001.md`
+  gains an "Arrays" section listing the three by-hand fixes (hoist to a field, use a
+  buffer-filling Unity API, rent and return explicitly); the README states the gap alongside the
+  existing initializer gap. Pinned by `AddPoolingComment_OnArrayCreation_ProducesCompilableCode`,
+  `AddPoolingComment_OnImplicitArrayCreation_UsesTheArrayWording`, and
+  `AddPoolingComment_OnObjectCreation_KeepsTheObjectPoolWording` (53 tests total, up from 51).
+
 ## [v0.8.4]
 
 ### Added

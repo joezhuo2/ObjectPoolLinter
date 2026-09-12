@@ -784,8 +784,74 @@ public class MyBehaviour : MonoBehaviour
 {
     void Update()
     {
-        // TODO: use an object pool to avoid per-frame allocation
+        // TODO: avoid this per-frame array allocation. Reuse a cached buffer, or rent one
+        // from ArrayPool<T>.Shared - Rent can return a longer array, and it must be Returned.
         var buffer = {|#0:new int[4]|};
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, AddPoolingCommentKey, diagnosticRemains: true);
+        }
+
+        [Fact]
+        public async Task AddPoolingComment_OnImplicitArrayCreation_UsesTheArrayWording()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var buffer = {|#0:new[] { 1, 2 }|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: avoid this per-frame array allocation. Reuse a cached buffer, or rent one
+        // from ArrayPool<T>.Shared - Rent can return a longer array, and it must be Returned.
+        var buffer = {|#0:new[] { 1, 2 }|};
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, AddPoolingCommentKey, diagnosticRemains: true);
+        }
+
+        [Fact]
+        public async Task AddPoolingComment_OnObjectCreation_KeepsTheObjectPoolWording()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var list = {|#0:new List<int>()|};
+    }
+}
+";
+
+            var fixedSource = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        var list = {|#0:new List<int>()|};
     }
 }
 ";

@@ -185,17 +185,32 @@ namespace ObjectPoolLinter
 
             var leadingTrivia = statement.GetLeadingTrivia();
             var indentation = leadingTrivia.LastOrDefault(t => t.IsKind(SyntaxKind.WhitespaceTrivia));
+            var endOfLine = GetEndOfLine(root);
 
-            var commentTrivia = SyntaxFactory.TriviaList(
-                SyntaxFactory.Comment("// TODO: use an object pool to avoid per-frame allocation"),
-                GetEndOfLine(root));
+            var commentTrivia = SyntaxFactory.TriviaList();
+            foreach (var line in GetPoolingCommentLines(node))
+            {
+                commentTrivia = commentTrivia.Add(SyntaxFactory.Comment(line)).Add(endOfLine);
 
-            if (indentation.IsKind(SyntaxKind.WhitespaceTrivia)) commentTrivia = commentTrivia.Add(indentation);
+                if (indentation.IsKind(SyntaxKind.WhitespaceTrivia)) commentTrivia = commentTrivia.Add(indentation);
+            }
 
             var newStatement = statement.WithLeadingTrivia(leadingTrivia.AddRange(commentTrivia));
             var newRoot = root.ReplaceNode(statement, newStatement);
             return document.WithSyntaxRoot(newRoot);
         }
+
+        // Arrays get their own wording because the object-pool fix does not apply to them and the
+        // replacement is not mechanical: a rented buffer can be longer than the requested length and
+        // has to be returned, so the developer has to decide the lifetime rather than accept a rewrite.
+        private static string[] GetPoolingCommentLines(SyntaxNode node) =>
+            node is ArrayCreationExpressionSyntax or ImplicitArrayCreationExpressionSyntax
+                ? new[]
+                {
+                    "// TODO: avoid this per-frame array allocation. Reuse a cached buffer, or rent one",
+                    "// from ArrayPool<T>.Shared - Rent can return a longer array, and it must be Returned.",
+                }
+                : new[] { "// TODO: use an object pool to avoid per-frame allocation" };
 
         private static SyntaxTrivia GetEndOfLine(SyntaxNode root)
         {

@@ -1,4 +1,4 @@
-# ObjectPoolLinter
+﻿# ObjectPoolLinter
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -114,7 +114,8 @@ how to change its severity or suppress it.
 When a diagnostic is reported, you can apply one of these quick fixes:
 
 1. **Replace with object pool Get()** - Replaces `new Type(args)` with `TypePool.Get(args)`
-2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling
+2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling (array allocations get
+   an array-specific comment pointing at `ArrayPool<T>.Shared`)
 
 Constructor arguments are forwarded to `Get()` unchanged, so `new Enemy(hp)` becomes
 `EnemyPool.Get(hp)`. The fix assumes your pool exposes a `Get` overload matching the constructor
@@ -124,6 +125,13 @@ The fix is **not** offered when the allocation carries an object or collection i
 (`new Enemy { Hp = 5 }`, `new List<int> { 1, 2 }`), because an initializer cannot be attached to a
 method call and dropping it would silently lose code. Use the TODO-comment fix there and rewrite the
 initializer by hand.
+
+It is also **not** offered for array allocations (`new int[4]`, `new[] { 1, 2 }`). Those are still
+reported, but there is no safe mechanical replacement: `ArrayPool<T>.Shared.Rent(4)` returns an array
+of length *at least* 4 rather than exactly 4, and the buffer has to be returned on every exit path.
+Only the TODO-comment fix is offered, and
+[docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) covers the ways to fix an array allocation by
+hand.
 
 ## License
 
