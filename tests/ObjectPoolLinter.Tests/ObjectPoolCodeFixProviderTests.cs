@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
@@ -54,8 +54,10 @@ namespace UnityEngine
             return test.RunAsync();
         }
 
-        private static DiagnosticResult Expected() =>
-            new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning).WithLocation(0);
+        private static DiagnosticResult Expected() => Expected(0);
+
+        private static DiagnosticResult Expected(int markerIndex) =>
+            new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning).WithLocation(markerIndex);
 
         [Fact]
         public async Task AddPoolingComment_OnLocalDeclaration_ProducesCompilableCode()
@@ -543,6 +545,427 @@ public class MyBehaviour : MonoBehaviour
                 .ToArray();
 
             Assert.Empty(errors);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_ForwardsArgumentsOfUnqualifiedGenericType()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ListPool<T>
+{
+    public static List<T> Get(int capacity) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var list = {|#0:new List<int>(16)|};
+    }
+}
+";
+
+            var fixedSource = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ListPool<T>
+{
+    public static List<T> Get(int capacity) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var list = ListPool<int>.Get(16);
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_InfersTypeArgumentsOfTargetTypedNew()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ListPool<T>
+{
+    public static List<T> Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        List<int> list = {|#0:new()|};
+    }
+}
+";
+
+            var fixedSource = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ListPool<T>
+{
+    public static List<T> Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        List<int> list = ListPool<int>.Get();
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_UsesTheUnqualifiedPoolNameForAQualifiedType()
+        {
+            var source = @"
+using UnityEngine;
+
+namespace Game
+{
+    public class Enemy
+    {
+    }
+}
+
+public class EnemyPool
+{
+    public static Game.Enemy Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = {|#0:new Game.Enemy()|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+namespace Game
+{
+    public class Enemy
+    {
+    }
+}
+
+public class EnemyPool
+{
+    public static Game.Enemy Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = EnemyPool.Get();
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenThePoolTypeIsInAnotherNamespace()
+        {
+            // The fix emits the pool name unqualified, so a pool that is out of scope at the
+            // allocation would produce uncompilable code and must not be offered.
+            var source = @"
+using UnityEngine;
+
+namespace Game
+{
+    public class Enemy
+    {
+    }
+
+    public class EnemyPool
+    {
+        public static Enemy Get() => null;
+    }
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = new Game.Enemy();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedForAnArrayCreation()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var buffer = new int[4];
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedForAnImplicitArrayCreation()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var buffer = new[] { 1, 2 };
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task AddPoolingComment_OnArrayCreation_ProducesCompilableCode()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var buffer = {|#0:new int[4]|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        var buffer = {|#0:new int[4]|};
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, AddPoolingCommentKey, diagnosticRemains: true);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenTheAllocatedTypeDoesNotResolve()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MissingPool
+{
+    public static object Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var thing = new Missing();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_FixAllRewritesEveryAllocation()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public class EnemyPool
+{
+    public static Enemy Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var first = {|#0:new Enemy()|};
+        var second = {|#1:new Enemy()|};
+    }
+
+    void FixedUpdate()
+    {
+        var third = {|#2:new Enemy()|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public class EnemyPool
+{
+    public static Enemy Get() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var first = EnemyPool.Get();
+        var second = EnemyPool.Get();
+    }
+
+    void FixedUpdate()
+    {
+        var third = EnemyPool.Get();
+    }
+}
+";
+
+            var test = new Test
+            {
+                TestCode = source,
+                FixedCode = fixedSource,
+                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                CodeActionEquivalenceKey = ReplaceWithPoolGetKey,
+                CompilerDiagnostics = CompilerDiagnostics.Errors,
+            };
+
+            test.TestState.Sources.Add(UnityStub);
+            test.FixedState.Sources.Add(UnityStub);
+
+            for (var i = 0; i < 3; i++)
+                test.TestState.ExpectedDiagnostics.Add(Expected(i));
+
+            await test.RunAsync();
+        }
+
+        [Fact]
+        public async Task AddPoolingComment_FixAllCommentsEveryAllocation()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var first = {|#0:new object()|};
+        var second = {|#1:new object()|};
+    }
+}
+";
+
+            // The comment fix leaves the diagnostic in place, so one incremental iteration only
+            // ever reaches the first allocation; fix-all has to reach both in a single pass.
+            var afterOneIteration = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        var first = {|#0:new object()|};
+        var second = {|#1:new object()|};
+    }
+}
+";
+
+            var afterFixAll = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        var first = {|#0:new object()|};
+        // TODO: use an object pool to avoid per-frame allocation
+        var second = {|#1:new object()|};
+    }
+}
+";
+
+            var test = new Test
+            {
+                TestCode = source,
+                FixedCode = afterOneIteration,
+                BatchFixedCode = afterFixAll,
+                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                CodeActionEquivalenceKey = AddPoolingCommentKey,
+                CompilerDiagnostics = CompilerDiagnostics.Errors,
+                // The fix never converges, so stop the incremental pass after the first fix and
+                // let the fix-all pass do the rest.
+                CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne,
+            };
+
+            test.TestState.Sources.Add(UnityStub);
+            test.FixedState.Sources.Add(UnityStub);
+            test.BatchFixedState.Sources.Add(UnityStub);
+
+            for (var i = 0; i < 2; i++)
+            {
+                test.TestState.ExpectedDiagnostics.Add(Expected(i));
+                test.FixedState.ExpectedDiagnostics.Add(Expected(i));
+                test.BatchFixedState.ExpectedDiagnostics.Add(Expected(i));
+            }
+
+            await test.RunAsync();
         }
 
         private static async Task<Document> ApplyAddPoolingCommentFixAsync(string source)

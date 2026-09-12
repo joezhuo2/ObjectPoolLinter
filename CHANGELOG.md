@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.2]
+
+### Added
+- Code-fix test coverage for the paths that were previously only verified by inspection, 10 tests
+  (48 total, up from 38):
+  - `ReplaceWithPoolGet` on an unqualified generic type (`new List<int>(16)` with `ListPool<T>`), and
+    on a target-typed `new()` whose type arguments have to be recovered from the converted type
+    (`List<int> list = new();`), which is the `ToMinimalDisplayString` path in `TryGetPoolName`.
+  - `ReplaceWithPoolGet` on a qualified type name (`new Game.Enemy()`), which emits the pool name
+    unqualified, plus the negative case where the pool lives in another namespace and is therefore
+    out of scope at the allocation - the fix must not be offered there, because the rewritten code
+    would not compile.
+  - The array gap (F4): neither `new int[4]` nor `new[] { 1, 2 }` offers the replacement fix, only the
+    TODO comment; a verifier test also pins the comment fix on an array creation.
+  - An unresolvable allocated type (`new Missing()`), where `TryGetPoolName` bails out on
+    `TypeKind.Error` and only the TODO comment is offered.
+  - Fix-all (F5), which `WellKnownFixAllProviders.BatchFixer` provided but nothing exercised: one test
+    rewrites three allocations across two hot-path methods in a single fix-all pass, and one applies
+    the TODO comment to every allocation. The comment fix does not remove the diagnostic, so that test
+    stops the incremental pass after the first fix (`CodeFixTestBehaviors.FixOne`) and compares the
+    fix-all result against a separate `BatchFixedCode`.
+
 ## [v0.8.1]
 
 ### Fixed
