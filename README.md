@@ -9,7 +9,7 @@ A Roslyn analyzer for Unity C# that detects object allocations in hot paths (lik
 - **Detects allocations in Unity hot paths**: Flags `new` object allocations and `Object.Instantiate()` calls inside frequently-called Unity methods
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Code fixes**: Provides quick actions to replace allocations with object pool `Get()` calls or add TODO comments
-- **Works with any object pool implementation**: The fix assumes a `{TypeName}Pool.Get()` pattern (e.g., `ListPool<int>.Get()`)
+- **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
 ## Requirements
 
@@ -125,8 +125,9 @@ When a diagnostic is reported, you can apply one of these quick fixes:
    an array-specific comment pointing at `ArrayPool<T>.Shared`)
 
 Constructor arguments are forwarded to `Get()` unchanged, so `new Enemy(hp)` becomes
-`EnemyPool.Get(hp)`. The fix assumes your pool exposes a `Get` overload matching the constructor
-signature; if it does not, the result will not compile and the missing overload is the thing to add.
+`EnemyPool.Get(hp)`. The pool itself is yours to write: the fix is only offered when a matching pool
+type is already in scope, and it never creates one. [The pool contract](#the-pool-contract) below
+spells out exactly what "matching" means and includes a minimal pool you can copy.
 
 The fix is **not** offered when the allocation carries an object or collection initializer
 (`new Enemy { Hp = 5 }`, `new List<int> { 1, 2 }`), because an initializer cannot be attached to a
@@ -139,6 +140,99 @@ of length *at least* 4 rather than exactly 4, and the buffer has to be returned 
 Only the TODO-comment fix is offered, and
 [docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) covers the ways to fix an array allocation by
 hand.
+
+## The pool contract
+
+The **Replace with object pool `Get()`** fix does not write a pool for you. It rewrites the
+allocation and nothing else, and it is only offered when a pool matching the contract below is
+already in scope. When no such type exists, the fix is not offered at all and only the TODO-comment
+fix appears.
+
+A pool satisfies the contract when all of these hold at the allocation site:
+
+| Requirement | Detail |
+| --- | --- |
+| Name | Exactly `{TypeName}Pool`, where `TypeName` is the *unqualified* name of the allocated type. `new Enemy()` looks for `EnemyPool`; `new System.Collections.Generic.List<int>()` looks for `ListPool`, never `System.Collections.Generic.ListPool`. |
+| Visibility | Resolvable by simple name at the allocation site: the same namespace, an enclosing type, or a namespace already imported by a `using`. The fix never adds a `using` and never qualifies the name it writes. |
+| Generic arity | Must match the allocated type's type-argument count, and the type arguments are copied over. `new List<int>()` becomes `ListPool<int>.Get()`, so `ListPool` has to be declared as `ListPool<T>`. |
+| `Get` member | A **static** method named exactly `Get`, accessible from the allocation site. An instance `Get` on a pool field, a singleton or an `ObjectPool<T>` instance does not qualify. |
+| `Get` arity | Must accept the constructor's argument count, because arguments are forwarded unchanged: `new Enemy(hp)` needs a `Get` overload taking one argument. Optional parameters and `params` are honoured. |
+
+Two things the fix does not check:
+
+- **The return type.** A `Get` that returns something other than the allocated type still satisfies
+  the lookup, and the rewritten call will not compile. That is a loud failure, not a silent one.
+- **The lifetime.** Nothing is inserted to hand the object back. Writing the release call is yours to
+  do; a pool nothing is returned to is a leak with extra steps.
+
+Target-typed `new()` is handled the same way: the pool name comes from the type the expression is
+converted to, so `Enemy e = new();` looks for `EnemyPool` just as `new Enemy()` does.
+
+### A minimal pool
+
+Copy-pasteable, C# 7.3, nothing beyond `System.Collections.Generic`, so it compiles in Unity 2021.3
+and later as-is. It is not thread-safe, which is enough for the main-thread Unity messages this rule
+watches.
+
+```csharp
+using System.Collections.Generic;
+
+public static class EnemyPool
+{
+    private static readonly Stack<Enemy> Free = new Stack<Enemy>();
+
+    // Matches new Enemy(hp): one argument, forwarded unchanged.
+    public static Enemy Get(int hp)
+    {
+        if (Free.Count == 0) return new Enemy(hp);
+
+        var enemy = Free.Pop();
+        enemy.Hp = hp; // reset whatever the constructor would have set
+        return enemy;
+    }
+
+    public static void Release(Enemy enemy)
+    {
+        Free.Push(enemy);
+    }
+}
+```
+
+Resetting a recycled instance is the pool's job, not the analyzer's. `Get` has to return an object in
+the state the constructor would have produced, or pooling introduces bugs the allocation never had.
+
+The generic form, which turns `new List<int>()` into `ListPool<int>.Get()`:
+
+```csharp
+using System.Collections.Generic;
+
+public static class ListPool<T>
+{
+    private static readonly Stack<List<T>> Free = new Stack<List<T>>();
+
+    public static List<T> Get()
+    {
+        return Free.Count > 0 ? Free.Pop() : new List<T>();
+    }
+
+    public static void Release(List<T> list)
+    {
+        list.Clear();
+        Free.Push(list);
+    }
+}
+```
+
+### Pools you may already have
+
+Unity 2021.1 and later ship the `UnityEngine.Pool` namespace, whose `ListPool<T>`, `HashSetPool<T>`
+and `DictionaryPool<TKey, TValue>` each expose a static `Get()` and so match the contract by name and
+arity. With `using UnityEngine.Pool;` in the file, the fix rewrites `new List<int>()` to
+`ListPool<int>.Get()` against Unity's own pool; release with `ListPool<int>.Release(list)`.
+
+`UnityEngine.Pool.ObjectPool<T>` does not match: its `Get` is an instance method, and the type is not
+named `{TypeName}Pool` for any pooled type. Use it by hand, or wrap it in a static class named for
+the type you are pooling.
 
 ## License
 

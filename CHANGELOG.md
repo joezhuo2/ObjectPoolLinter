@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.7]
+
+### Documentation
+- The README now has a `The pool contract` section specifying exactly what the "Replace with object
+  pool `Get()`" fix looks for: the `{TypeName}Pool` name derived from the unqualified type name,
+  simple-name visibility at the allocation site, matching generic arity, and a static accessible
+  `Get` whose parameter list accepts the forwarded constructor arguments. It states plainly that the
+  fix never creates the pool and never inserts the release call, names the two things it does not
+  check (the `Get` return type and the object's lifetime), and carries copy-pasteable non-generic and
+  generic pool implementations plus notes on `UnityEngine.Pool`. The `Features` bullet that claimed
+  the analyzer "works with any object pool implementation" is corrected, and `docs/rules/OPL001.md`
+  links to the new section. Closes D2.
+
 ## [v0.8.6]
 
 ### Documentation
