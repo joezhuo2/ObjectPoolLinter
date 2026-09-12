@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.1]
+
+### Fixed
+- The `UnityEngine` namespace check compared `ContainingNamespace.Name`, which is only the innermost
+  namespace segment. A user's own `Game.UnityEngine.MonoBehaviour` or `Game.UnityEngine.Object`
+  therefore matched, so allocations in an `Update` on an unrelated base class produced false OPL001
+  warnings, and a look-alike static `Instantiate` was reported as a Unity instantiation. This closes
+  the gap noted in the v0.8.0 entry below.
+
+  Both sites (`IsUnityMessage` and `IsInstantiateCall`) now go through a shared `IsUnityEngineType`
+  helper that compares the full namespace via `ContainingNamespace.ToDisplayString()` and also
+  requires the type to be top-level, so a type nested inside another `UnityEngine` type no longer
+  matches either.
+
+- 3 analyzer tests added for the look-alike namespace and nested-type cases (38 total, up from 35).
+
 ## [v0.8.0]
 
 ### Fixed

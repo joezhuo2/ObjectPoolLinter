@@ -486,6 +486,77 @@ public class MyBehaviour : MonoBehaviour
             await VerifyAnalyzerAsync(source);
         }
 
+        [Fact]
+        public async Task NewObjectInUpdateOfLookAlikeMonoBehaviour_DoesNotReport()
+        {
+            var source = @"
+namespace Game.UnityEngine
+{
+    public class MonoBehaviour { }
+}
+
+public class MyBehaviour : Game.UnityEngine.MonoBehaviour
+{
+    void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task NewObjectInUpdateOfNestedMonoBehaviour_DoesNotReport()
+        {
+            var source = @"
+namespace UnityEngine
+{
+    public class Outer
+    {
+        public class MonoBehaviour { }
+    }
+}
+
+public class MyBehaviour : UnityEngine.Outer.MonoBehaviour
+{
+    void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task LookAlikeInstantiateInUpdate_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+namespace Game.UnityEngine
+{
+    public class Object
+    {
+        public static Object Instantiate(Object original) => null;
+    }
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        Game.UnityEngine.Object.Instantiate(null);
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
         private sealed class Test : AnalyzerTest<DefaultVerifier>
         {
             public Test()

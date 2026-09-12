@@ -132,9 +132,7 @@ namespace ObjectPoolLinter
                 return false;
 
             return methodSymbol.IsStatic &&
-                   methodSymbol.ContainingType != null &&
-                   methodSymbol.ContainingType.Name.Equals("Object", System.StringComparison.Ordinal) &&
-                   methodSymbol.ContainingType.ContainingNamespace?.Name.Equals("UnityEngine", System.StringComparison.Ordinal) == true;
+                   IsUnityEngineType(methodSymbol.ContainingType, "Object");
         }
 
         private static bool TryGetHotPathMethod(SyntaxNode node, SemanticModel semanticModel, out string methodName)
@@ -226,8 +224,7 @@ namespace ObjectPoolLinter
             var containingType = methodSymbol.ContainingType;
             while (containingType != null)
             {
-                if (containingType.Name.Equals("MonoBehaviour", System.StringComparison.Ordinal) &&
-                    containingType.ContainingNamespace?.Name.Equals("UnityEngine", System.StringComparison.Ordinal) == true)
+                if (IsUnityEngineType(containingType, "MonoBehaviour"))
                 {
                     return true;
                 }
@@ -236,6 +233,16 @@ namespace ObjectPoolLinter
             }
 
             return false;
+        }
+
+        // INamespaceSymbol.Name is only the innermost segment, so a user type in a
+        // namespace such as Game.UnityEngine would otherwise match UnityEngine.
+        private static bool IsUnityEngineType(INamedTypeSymbol? type, string typeName)
+        {
+            return type != null &&
+                   type.ContainingType == null &&
+                   type.Name.Equals(typeName, System.StringComparison.Ordinal) &&
+                   type.ContainingNamespace?.ToDisplayString().Equals("UnityEngine", System.StringComparison.Ordinal) == true;
         }
 
         private static bool HasExpectedParameters(IMethodSymbol methodSymbol, string expectedParameterType)
