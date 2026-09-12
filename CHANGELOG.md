@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.8]
+
+### Documentation
+- The README has a `Known limitations` section stating what OPL001 does not do, so a clean run is not
+  read as a claim that a method allocates nothing: no call-graph analysis and delegates that escape
+  the frame (lambdas and local functions only converted, never invoked in place); the allocation
+  shapes that go undetected (boxing, string concatenation and interpolation, closure capture, implicit
+  `params` arrays, LINQ, and the allocating Unity APIs such as `GetComponentsInChildren`,
+  `Physics.RaycastAll`, `GameObject.Find`, `Camera.allCameras` and `Input.touches`), scoped as future
+  OPL002+ rules rather than a widening of OPL001; the two allocation shapes that get no replacement
+  fix (arrays, and allocations carrying an object or collection initializer); and the fact that the
+  replacement fix neither writes the pool nor releases the object. Linked from the `Features` and
+  `Usage` sections, and `docs/rules/OPL001.md` gains a `What the rule does not cover` section pointing
+  at it. Closes D3.
+
 ## [v0.8.7]
 
 ### Documentation

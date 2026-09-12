@@ -11,6 +11,10 @@ A Roslyn analyzer for Unity C# that detects object allocations in hot paths (lik
 - **Code fixes**: Provides quick actions to replace allocations with object pool `Get()` calls or add TODO comments
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
+What the rule deliberately does not cover — call-graph analysis, boxing, string and LINQ allocation,
+allocating Unity APIs, and the two allocation shapes with no replacement fix — is listed under
+[Known limitations](#known-limitations).
+
 ## Requirements
 
 The analyzer and code fix are `netstandard2.0` assemblies built against **Roslyn 3.8**
@@ -115,6 +119,9 @@ The analyzer runs automatically during build and in IDEs that support Roslyn ana
 
 The rule it reports is documented in [docs/rules/OPL001.md](docs/rules/OPL001.md), which also covers
 how to change its severity or suppress it.
+
+Its boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
+that a method allocates nothing.
 
 ### Code Fixes
 
@@ -233,6 +240,41 @@ arity. With `using UnityEngine.Pool;` in the file, the fix rewrites `new List<in
 `UnityEngine.Pool.ObjectPool<T>` does not match: its `Get` is an instance method, and the type is not
 named `{TypeName}Pool` for any pooled type. Use it by hand, or wrap it in a static class named for
 the type you are pooling.
+
+## Known limitations
+
+OPL001 is deliberately narrow: it reports allocations it can see in a hot-path body and offers a fix
+only when that fix cannot change behaviour. The gaps below are known and intentional for this
+version, not bugs.
+
+**Only allocations written directly in the message body are reported.** There is no call-graph
+analysis, so `void Update() { Spawn(); }` is silent no matter what `Spawn()` allocates. An allocation
+inside a lambda or an anonymous method is attributed to whoever invokes the delegate, not to the
+message, so it is reported only when the lambda is invoked in place; a local function is reported
+only when the declaring body actually calls it. Converting either to a delegate — registering it as a
+callback — escapes the rule on purpose, because how often it runs is no longer decided by the frame.
+
+**Several allocating constructs are not detected at all.** The analyzer matches `new` expressions and
+`UnityEngine.Object.Instantiate` calls. It does not flag string concatenation or interpolation,
+closure capture, implicit `params` arrays, LINQ operators, or the allocating Unity APIs people hit
+most in `Update` (`GetComponentsInChildren`, `Physics.RaycastAll`, `GameObject.Find`,
+`Camera.allCameras`, `Input.touches`). Boxing is also missed: `object o = new MyStruct();` allocates,
+but the value-type filter drops it before the conversion is considered. Covering these is planned as
+separate rules (OPL002+), not as a widening of OPL001 — a clean OPL001 run is not a claim that a
+method is allocation-free.
+
+**Array allocations get no replacement fix.** `new int[4]` and `new[] { 1, 2 }` are reported, but only
+the TODO-comment fix is offered, because `ArrayPool<T>.Shared.Rent(4)` returns an array of length *at
+least* 4 and the buffer must be returned on every exit path. See
+[docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) for the three by-hand fixes.
+
+**Allocations with an initializer get no replacement fix.** `new Enemy { Hp = 5 }` and
+`new List<int> { 1, 2 }` are reported, but an initializer cannot be carried onto a method call, so the
+fix would have to drop it. Rewrite the initializer by hand after taking the object from the pool.
+
+**The replacement fix never writes the pool and never releases the object.** It is offered only when a
+pool matching [the pool contract](#the-pool-contract) is already in scope, and it inserts no release
+call — returning the object is yours to do.
 
 ## License
 
