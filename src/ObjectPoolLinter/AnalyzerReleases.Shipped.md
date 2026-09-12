@@ -1,7 +1,5 @@
-## Release 1.0.0
-
-### New Rules
-
-Rule ID | Category | Severity | Notes
---------|----------|----------|-------
-OPL001 | Performance | Warning | Detects `new` expressions and Unity `Instantiate` calls inside frequently-invoked methods (e.g. `Update`).
+; Shipped analyzer releases
+; https://github.com/dotnet/roslyn-analyzers/blob/main/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md
+;
+; No release has shipped yet. The 1.0.0 release commit moves the rules below from
+; AnalyzerReleases.Unshipped.md into a "## Release 1.0.0" section here.

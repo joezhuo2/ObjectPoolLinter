@@ -625,6 +625,251 @@ public class MyBehaviour : UnityEngine.MonoBehaviour
             await VerifyWithoutUnityAsync(source, expected);
         }
 
+        [Fact]
+        public async Task ArrayCreationInUpdate_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var buffer = {|#0:new int[10]|};
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("Update", "int[10]");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task ImplicitArrayCreationInUpdate_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var buffer = {|#0:new[] { 1, 2 }|};
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("Update", "int[]");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task TargetTypedNewInUpdate_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        System.Collections.Generic.List<int> list = {|#0:new()|};
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("Update", "List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task ArrayCreationInNonHotPathMethod_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Start()
+    {
+        var buffer = new int[10];
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task InstantiateOutsideHotPath_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    public Object prefab;
+
+    void Start()
+    {
+        Object.Instantiate(prefab);
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task NewObjectInGrandchildOfMonoBehaviour_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class BaseBehaviour : MonoBehaviour { }
+
+public class MiddleBehaviour : BaseBehaviour { }
+
+public class MyBehaviour : MiddleBehaviour
+{
+    void Update()
+    {
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("Update", "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task NewObjectInNestedMonoBehaviourClass_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Outer : MonoBehaviour
+{
+    public class Inner : MonoBehaviour
+    {
+        void Update()
+        {
+            var list = {|#0:new System.Collections.Generic.List<int>()|};
+        }
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("Update", "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        // A plain class nested inside a MonoBehaviour must not inherit hot-path status from the
+        // enclosing type: containment is not inheritance.
+        [Fact]
+        public async Task NewObjectInPlainClassNestedInMonoBehaviour_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Outer : MonoBehaviour
+{
+    public class Helper
+    {
+        public void Update()
+        {
+            var list = new System.Collections.Generic.List<int>();
+        }
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        // Smoke test across the full hot-path table: every message the analyzer recognises, declared
+        // with the signature Unity actually calls, reports on an allocation in its body.
+        [Theory]
+        [InlineData("Update", "")]
+        [InlineData("FixedUpdate", "")]
+        [InlineData("LateUpdate", "")]
+        [InlineData("OnGUI", "")]
+        [InlineData("OnTriggerStay", "Collider other")]
+        [InlineData("OnTriggerStay2D", "Collider2D other")]
+        [InlineData("OnCollisionStay", "Collision collision")]
+        [InlineData("OnCollisionStay2D", "Collision2D collision")]
+        [InlineData("OnMouseOver", "")]
+        [InlineData("OnMouseDrag", "")]
+        [InlineData("OnAnimatorMove", "")]
+        [InlineData("OnAnimatorIK", "int layerIndex")]
+        [InlineData("OnRenderObject", "")]
+        [InlineData("OnWillRenderObject", "")]
+        [InlineData("OnPreRender", "")]
+        [InlineData("OnPostRender", "")]
+        [InlineData("OnDrawGizmos", "")]
+        [InlineData("OnDrawGizmosSelected", "")]
+        public async Task NewObjectInHotPathMessage_ReportsDiagnostic(string messageName, string parameters)
+        {
+            var source = $@"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{{
+    void {messageName}({parameters})
+    {{
+        var list = {{|#0:new System.Collections.Generic.List<int>()|}};
+    }}
+}}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments(messageName, "System.Collections.Generic.List<int>");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        // The inverse of the smoke test: a method whose name is not in the hot-path table is ignored
+        // even when it is a real Unity message.
+        [Theory]
+        [InlineData("Start", "")]
+        [InlineData("Awake", "")]
+        [InlineData("OnEnable", "")]
+        [InlineData("OnTriggerEnter", "Collider other")]
+        [InlineData("OnCollisionEnter", "Collision collision")]
+        public async Task NewObjectInColdPathMessage_DoesNotReport(string messageName, string parameters)
+        {
+            var source = $@"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{{
+    void {messageName}({parameters})
+    {{
+        var list = new System.Collections.Generic.List<int>();
+    }}
+}}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
         private sealed class Test : AnalyzerTest<DefaultVerifier>
         {
             public Test()

@@ -5,7 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v0.8.8]
+## [Unreleased]
+
+## [v0.9.0] - 2026-09-12
+
+### Changed
+- `AnalyzerReleases.Shipped.md` no longer claims a `Release 1.0.0` that was never published. OPL001
+  moves to `AnalyzerReleases.Unshipped.md`, which is where a rule lives until the release that ships
+  it; the 1.0.0 release commit moves it back under a real `## Release 1.0.0` heading. Until then the
+  shipped file is empty, which is the truth: no version of this analyzer has been released.
+- This changelog now carries an `[Unreleased]` section, a release date on every version heading, and
+  compare links against the `v*` tags. Changes land under `[Unreleased]` and are renamed to the
+  version heading when that version is tagged, instead of every change inventing a version of its
+  own.
+
+### Notes
+- `v0.7.1` was never a release. Its SourceLink and deterministic-build work landed in the same commit
+  as `v0.8.0`, and the package version went straight from `0.7.0` to `0.8.0`, so the entry below has
+  no tag and no compare link.
+
+### Tests
+- Analyzer coverage now includes the allocation shapes added after the first release: array creation
+  (`new int[10]`), implicit array creation (`new[] { 1, 2 }`) and target-typed `new()`, each pinning
+  the type name in the diagnostic message; allocations outside a hot path, including `Instantiate` in
+  `Start`; a MonoBehaviour two inheritance levels deep; a MonoBehaviour nested in another
+  MonoBehaviour; and a plain class nested inside a MonoBehaviour, which must stay silent. Two
+  theories sweep the message table: all 18 hot-path messages report, and five cold-path messages do
+  not. 84 tests, up from 53. Closes T2.
+
+## [v0.8.8] - 2026-09-12
 
 ### Documentation
 - The README has a `Known limitations` section stating what OPL001 does not do, so a clean run is not
@@ -20,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Usage` sections, and `docs/rules/OPL001.md` gains a `What the rule does not cover` section pointing
   at it. Closes D3.
 
-## [v0.8.7]
+## [v0.8.7] - 2026-09-12
 
 ### Documentation
 - The README now has a `The pool contract` section specifying exactly what the "Replace with object
@@ -33,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the analyzer "works with any object pool implementation" is corrected, and `docs/rules/OPL001.md`
   links to the new section. Closes D2.
 
-## [v0.8.6]
+## [v0.8.6] - 2026-09-12
 
 ### Documentation
 - The README `Requirements` section now carries a supported-version table listing Unity, Visual Studio,
@@ -41,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prose bullets that mixed Unity's Roslyn-plugin rules with IDE versions. It also states that the
   package has no dependencies of its own and contributes nothing to build output. Closes D1.
 
-## [v0.8.5]
+## [v0.8.5] - 2026-09-12
 
 ### Changed
 - The "Add pooling TODO comment" fix now uses array-specific wording on `new int[4]` / `new[] { 1, 2 }`,
@@ -58,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AddPoolingComment_OnImplicitArrayCreation_UsesTheArrayWording`, and
   `AddPoolingComment_OnObjectCreation_KeepsTheObjectPoolWording` (53 tests total, up from 51).
 
-## [v0.8.4]
+## [v0.8.4] - 2026-09-12
 
 ### Added
 - `docs/rules/OPL001.md`: what the rule flags (including the signature and `MonoBehaviour` conditions,
@@ -69,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the error list have somewhere to link and RS1015 has nothing to report. Pinned by
   `Descriptor_HasHelpLinkToTheRuleDoc` (51 tests total, up from 50).
 
-## [v0.8.3]
+## [v0.8.3] - 2026-09-12
 
 ### Changed
 - The analyzer resolves `UnityEngine.MonoBehaviour` and `UnityEngine.Object` once per compilation from
@@ -89,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AllocationInUpdateWithoutUnityObject_ReportsDiagnostic` pin the bail-out and the partial-stub
   behaviour (50 tests total, up from 48).
 
-## [v0.8.2]
+## [v0.8.2] - 2026-09-12
 
 ### Added
 - Code-fix test coverage for the paths that were previously only verified by inspection, 10 tests
@@ -111,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     stops the incremental pass after the first fix (`CodeFixTestBehaviors.FixOne`) and compares the
     fix-all result against a separate `BatchFixedCode`.
 
-## [v0.8.1]
+## [v0.8.1] - 2026-09-12
 
 ### Fixed
 - The `UnityEngine` namespace check compared `ContainingNamespace.Name`, which is only the innermost
@@ -127,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 3 analyzer tests added for the look-alike namespace and nested-type cases (38 total, up from 35).
 
-## [v0.8.0]
+## [v0.8.0] - 2026-09-12
 
 ### Fixed
 - `IsUnityMessage` matched on method name alone, so any method named `Update`,
@@ -149,7 +177,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 10 analyzer tests added for the new signature rules (35 total, up from 25); the Unity stub in the
   test project gained `Collider`, `Collider2D`, `Collision` and `Collision2D`.
 
-## [v0.7.1]
+## v0.7.1 - 2026-09-12 (never tagged; shipped inside v0.8.0)
 
 ### Added
 - SourceLink, debug symbols and deterministic builds, none of which the package had. A consumer who
@@ -175,7 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Verified: two `CI=true` builds of the analyzer produce byte-identical `.dll` and `.pdb`; the CI
   PDB normalizes source paths to `/_/` while the local one does not; 25/25 tests pass.
 
-## [v0.7.0]
+## [v0.7.0] - 2026-09-12
 
 ### Added
 - A Unity install path, which the project did not have: Unity does not consume NuGet analyzers, so
@@ -199,7 +227,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"unity": "2021.3"`, matching Unity's documented Roslyn 3.8 requirement for 2021.3 and 2022.3, but
   those versions are untested and the README says so.
 
-## [v0.6.5]
+## [v0.6.5] - 2026-09-11
 
 ### Changed
 - Lowered the Roslyn reference from `Microsoft.CodeAnalysis.* 4.8.0` to `3.8.0` in the analyzer and
@@ -209,7 +237,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The tests still run on Roslyn 4.8.0, so they exercise the analyzer in a newer host.
 - README: a `Requirements` section that states the Roslyn 3.8 floor and which hosts it covers.
 
-## [v0.6.4]
+## [v0.6.4] - 2026-09-11
 
 ### Changed
 - The analyzer and the code fix are now separate assemblies. `ObjectPoolLinter.dll` holds only the
@@ -224,14 +252,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restore does not see two projects with the same ID.
 - The sample project and the tests reference the code fix project alongside the analyzer.
 
-## [v0.6.3]
+## [v0.6.3] - 2026-09-10
 
 ### Added
 - `LICENSE` at the repository root: the MIT License text. The project file already declared
   `PackageLicenseExpression=MIT`, but the repository itself carried no license text, so by default it was all rights reserved and nobody could legally use it. The license file is also packed at the package root.
 - README: an MIT license badge under the title and a `License` section.
 
-## [v0.6.2]
+## [v0.6.2] - 2026-09-10
 
 ### Added
 - NuGet package metadata on the analyzer project: `PackageId`, an explicit `Version`, `Authors`,
@@ -248,12 +276,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SuppressDependenciesWhenPacking=true`: the package carries no `lib/`, so the otherwise-empty
   `netstandard2.0` dependency group tripped NU5128 on every `dotnet pack`.
 
-## [v0.6.1]
+## [v0.6.1] - 2026-09-10
 
 ### Fixed
 - building the package with `dotnet pack -c Release` creating an empty package (no analyzer)
 
-## [v0.6.0]
+## [v0.6.0] - 2026-09-08
 
 ### Fixed
 - The "Replace with object pool Get()" code fix invented a pool type out of the allocated type's
@@ -277,7 +305,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Get` is not static, when it is inaccessible (`private`), when the pool's generic arity differs
   from the allocated type's, and when `Get` cannot take the constructor arguments being forwarded.
 
-## [v0.5.0]
+## [v0.5.0] - 2026-09-06
 
 ### Fixed
 - The "Replace with object pool Get()" code fix dropped constructor arguments: `new Enemy(hp)`
@@ -296,7 +324,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code fix tests covering argument forwarding (single argument, named/`out` arguments, target-typed
   `new`) and one asserting the replace fix is not registered when an initializer is present.
 
-## [v0.4.0]
+## [v0.4.0] - 2026-09-04
 
 ### Fixed
 - The "Add pooling TODO comment" code fix produced code that does not compile. The comment was
@@ -322,12 +350,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to rewrite neighbouring lines to the workspace's own newline, which would churn line endings the
   user never touched.
 
-## [v0.3.1]
+## [v0.3.1] - 2026-09-04
 
 ### Added
 - **`.gitattributes`** - Without it, files saved with CRLF while the committed blobs are LF show up as whole-file modifications and pollute real diffs. Normalize text files to LF in the repository, native on checkout, and mark common binary types explicitly.
 
-## [v0.3.0]
+## [v0.3.0] - 2026-09-04
 
 ### Fixed
 - Allocations inside a lambda or anonymous method declared in a hot-path Unity message
@@ -338,7 +366,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only when the declaring body actually calls that local function. A local function that
   is only converted to a delegate escapes the same way a lambda does.
 
-## [v0.2.0]
+## [v0.2.0] - 2026-09-02
 
 ### Fixed
 - Code fix emitted invalid C# for generic types: `new List<int>()` produced
@@ -362,7 +390,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type argument printed from the symbol does not round-trip through `ParseTypeName`,
   instead of emitting a guess.
 
-## [v0.1.0]
+## [v0.1.0] - 2026-09-02
 
 ### Added
 - Detection of array allocations in hot paths: `SyntaxKind.ArrayCreationExpression`
@@ -380,3 +408,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
+
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.0...HEAD
+[v0.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.8...v0.9.0
+[v0.8.8]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.7...v0.8.8
+[v0.8.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.6...v0.8.7
+[v0.8.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.5...v0.8.6
+[v0.8.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.4...v0.8.5
+[v0.8.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.3...v0.8.4
+[v0.8.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.2...v0.8.3
+[v0.8.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.1...v0.8.2
+[v0.8.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.0...v0.8.1
+[v0.8.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.7.0...v0.8.0
+[v0.7.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.6.5...v0.7.0
+[v0.6.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.6.4...v0.6.5
+[v0.6.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.6.3...v0.6.4
+[v0.6.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.6.2...v0.6.3
+[v0.6.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.6.1...v0.6.2
+[v0.6.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.6.0...v0.6.1
+[v0.6.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.5.0...v0.6.0
+[v0.5.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.4.0...v0.5.0
+[v0.4.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.3.1...v0.4.0
+[v0.3.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.3.0...v0.3.1
+[v0.3.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.2.0...v0.3.0
+[v0.2.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.1.0...v0.2.0
+[v0.1.0]: https://github.com/joezhuo2/ObjectPoolLinter/releases/tag/v0.1.0
