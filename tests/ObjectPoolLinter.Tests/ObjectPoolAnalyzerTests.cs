@@ -82,13 +82,13 @@ public class MyBehaviour : MonoBehaviour
 {
     void Update()
     {
-        var list = new System.Collections.Generic.List<int>();
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
     }
 }
 ";
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
-                .WithSpan(8, 20, 8, 62)
+                .WithLocation(0)
                 .WithArguments("Update", "System.Collections.Generic.List<int>");
 
             await VerifyAnalyzerAsync(source, expected);
@@ -105,13 +105,13 @@ public class MyBehaviour : MonoBehaviour
     public Object prefab;
     void Update()
     {
-        Object.Instantiate(prefab);
+        {|#0:Object.Instantiate(prefab)|};
     }
 }
 ";
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
-                .WithSpan(9, 9, 9, 35)
+                .WithLocation(0)
                 .WithArguments("Update", "Instantiate");
 
             await VerifyAnalyzerAsync(source, expected);
@@ -181,13 +181,13 @@ public class MyBehaviour : MonoBehaviour
 {
     void FixedUpdate()
     {
-        var list = new System.Collections.Generic.List<int>();
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
     }
 }
 ";
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
-                .WithSpan(8, 20, 8, 62)
+                .WithLocation(0)
                 .WithArguments("FixedUpdate", "System.Collections.Generic.List<int>");
 
             await VerifyAnalyzerAsync(source, expected);
@@ -383,13 +383,13 @@ public class MyBehaviour : MonoBehaviour
 {
     void OnTriggerStay(Collider other)
     {
-        var list = new System.Collections.Generic.List<int>();
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
     }
 }
 ";
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
-                .WithSpan(8, 20, 8, 62)
+                .WithLocation(0)
                 .WithArguments("OnTriggerStay", "System.Collections.Generic.List<int>");
 
             await VerifyAnalyzerAsync(source, expected);
@@ -441,13 +441,13 @@ public class MyBehaviour : MonoBehaviour
 {
     void OnCollisionStay2D(Collision2D collision)
     {
-        var list = new System.Collections.Generic.List<int>();
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
     }
 }
 ";
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
-                .WithSpan(8, 20, 8, 62)
+                .WithLocation(0)
                 .WithArguments("OnCollisionStay2D", "System.Collections.Generic.List<int>");
 
             await VerifyAnalyzerAsync(source, expected);
@@ -463,13 +463,13 @@ public class MyBehaviour : MonoBehaviour
 {
     void OnAnimatorIK(int layerIndex)
     {
-        var list = new System.Collections.Generic.List<int>();
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
     }
 }
 ";
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
-                .WithSpan(8, 20, 8, 62)
+                .WithLocation(0)
                 .WithArguments("OnAnimatorIK", "System.Collections.Generic.List<int>");
 
             await VerifyAnalyzerAsync(source, expected);
@@ -613,13 +613,13 @@ public class MyBehaviour : UnityEngine.MonoBehaviour
 {
     void Update()
     {
-        var list = new System.Collections.Generic.List<int>();
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
     }
 }
 ";
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
-                .WithSpan(11, 20, 11, 62)
+                .WithLocation(0)
                 .WithArguments("Update", "System.Collections.Generic.List<int>");
 
             await VerifyWithoutUnityAsync(source, expected);

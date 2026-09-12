@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.1] - 2026-09-12
+
+### Tests
+- Analyzer tests no longer hardcode diagnostic spans. The seven `.WithSpan(line, col, line, col)`
+  expectations are replaced by markup in the test source (`{|#0:...|}`) with `.WithLocation(0)`, so
+  reformatting a test source does not break its expectation. Message arguments are still checked.
+  Closes T3.
+
 ## [v0.9.0] - 2026-09-12
 
 ### Changed
@@ -409,7 +417,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.1...HEAD
+[v0.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.0...v0.9.1
 [v0.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.8...v0.9.0
 [v0.8.8]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.7...v0.8.8
 [v0.8.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.6...v0.8.7
