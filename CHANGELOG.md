@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.6]
+
+### Documentation
+- The README `Requirements` section now carries a supported-version table listing Unity, Visual Studio,
+  the .NET SDK, Rider and VS Code with their minimum supported versions in one place, replacing the
+  prose bullets that mixed Unity's Roslyn-plugin rules with IDE versions. It also states that the
+  package has no dependencies of its own and contributes nothing to build output. Closes D1.
+
 ## [v0.8.5]
 
 ### Changed

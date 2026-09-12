@@ -13,13 +13,20 @@ A Roslyn analyzer for Unity C# that detects object allocations in hot paths (lik
 
 ## Requirements
 
-The analyzer and code fix are built against **Roslyn 3.8** (`Microsoft.CodeAnalysis.CSharp` 3.8.0),
-the minimum supported version. They load in any compiler or IDE that ships Roslyn 3.8 or later:
+The analyzer and code fix are `netstandard2.0` assemblies built against **Roslyn 3.8**
+(`Microsoft.CodeAnalysis.CSharp` 3.8.0), the minimum supported version. They load in any compiler or
+IDE that ships Roslyn 3.8 or later.
 
-- **Unity**: Unity's documentation requires Roslyn plugins built against 3.8 for 2021.3 and 2022.3,
-  and against 4.3 or lower for Unity 6. A 3.8 build satisfies all of them.
-- **IDEs and SDKs**: Visual Studio 2019 16.8 or later, the .NET 5 SDK or later, and current Rider and
-  VS Code with C# Dev Kit.
+| Host | Minimum supported | Notes |
+| --- | --- | --- |
+| Unity | 2021.3 | Unity requires Roslyn plugins built against 3.8 on 2021.3 and 2022.3, and against 4.3 or lower on Unity 6, so one 3.8 build covers all three. Verified on 6000.4.6f1; 2021.3 and 2022.3 are declared by the UPM package but untested here. |
+| Visual Studio | 2019 16.8 | First release carrying Roslyn 3.8. |
+| .NET SDK | 5.0 | Needed only to compile a project that references the analyzer, not by Unity. |
+| Rider | Current releases | Rider ships its own Roslyn; no version older than the Roslyn 3.8 era has been tested. |
+| VS Code | Current releases with the C# extension (or C# Dev Kit) | Analyzer diagnostics need background analysis enabled (`dotnet.backgroundAnalysis.analyzerDiagnosticsScope`). |
+
+The NuGet package has no dependencies of its own and adds nothing to your build output: it is a
+development-time analyzer reference only.
 
 Hosts older than Roslyn 3.8 are not supported: the analyzer recognizes C# 9 target-typed `new()`,
 which Roslyn 3.8 introduced.
