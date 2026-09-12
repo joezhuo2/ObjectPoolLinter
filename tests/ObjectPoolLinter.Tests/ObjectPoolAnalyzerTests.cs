@@ -47,6 +47,20 @@ namespace UnityEngine
             return test.RunAsync();
         }
 
+        // Verifies a compilation that does not reference the Unity stub, so the analyzer sees no
+        // UnityEngine types at all.
+        private static Task VerifyWithoutUnityAsync(string source, params DiagnosticResult[] expected)
+        {
+            var test = new Test
+            {
+                TestCode = source,
+                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+            };
+
+            test.ExpectedDiagnostics.AddRange(expected);
+            return test.RunAsync();
+        }
+
         [Fact]
         public async Task NewObjectInUpdate_ReportsDiagnostic()
         {
@@ -555,6 +569,49 @@ public class MyBehaviour : MonoBehaviour
 ";
 
             await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task AllocationInUpdateWithoutUnityEngine_DoesNotReport()
+        {
+            var source = @"
+public class MonoBehaviour { }
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyWithoutUnityAsync(source);
+        }
+
+        [Fact]
+        public async Task AllocationInUpdateWithoutUnityObject_ReportsDiagnostic()
+        {
+            var source = @"
+namespace UnityEngine
+{
+    public class MonoBehaviour { }
+}
+
+public class MyBehaviour : UnityEngine.MonoBehaviour
+{
+    void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithSpan(11, 20, 11, 62)
+                .WithArguments("Update", "System.Collections.Generic.List<int>");
+
+            await VerifyWithoutUnityAsync(source, expected);
         }
 
         private sealed class Test : AnalyzerTest<DefaultVerifier>

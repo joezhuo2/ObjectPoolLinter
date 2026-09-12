@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.3]
+
+### Changed
+- The analyzer resolves `UnityEngine.MonoBehaviour` and `UnityEngine.Object` once per compilation from
+  a `RegisterCompilationStartAction`, and registers its syntax node actions only when the compilation
+  actually has `UnityEngine.MonoBehaviour`. A project without Unity no longer pays a semantic lookup
+  per allocation: on a synthetic 60-file, 24000-allocation compilation, the analyzer's contribution to
+  `GetAnalyzerDiagnosticsAsync` drops from a 574 ms median to 4 ms. The Unity path is unchanged within
+  the noise of that harness (medians 614/616/641 ms before, 687/664/643 ms after, spread ~±100 ms).
+- Hot path detection now compares symbols against the compilation's own `MonoBehaviour` and `Object`
+  instead of matching type and namespace names, which is how the v0.8.1 look-alike rejection
+  (`Game.UnityEngine.MonoBehaviour`, `UnityEngine.Outer.MonoBehaviour`) is now enforced.
+- `UnityEngine.Object` is optional: a compilation that declares `MonoBehaviour` without it still gets
+  allocation diagnostics, and no call is treated as `Object.Instantiate`.
+
+### Added
+- `AllocationInUpdateWithoutUnityEngine_DoesNotReport` and
+  `AllocationInUpdateWithoutUnityObject_ReportsDiagnostic` pin the bail-out and the partial-stub
+  behaviour (50 tests total, up from 48).
+
 ## [v0.8.2]
 
 ### Added

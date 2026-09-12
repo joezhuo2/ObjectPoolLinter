@@ -28,10 +28,11 @@ namespace ObjectPoolLinter
             description: Description
         );
 
+        private const string MonoBehaviourMetadataName = "UnityEngine.MonoBehaviour";
+        private const string UnityObjectMetadataName = "UnityEngine.Object";
+
         private const string NoParameters = "";
 
-        // Unity dispatches messages by exact signature: the wrong arity or parameter type
-        // means the method is never called, so it is not a hot path.
         private static readonly ImmutableDictionary<string, string> HotPathMessageSignatures =
             new Dictionary<string, string>(System.StringComparer.Ordinal)
             {
@@ -62,205 +63,219 @@ namespace ObjectPoolLinter
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
             context.EnableConcurrentExecution();
 
+            context.RegisterCompilationStartAction(OnCompilationStart);
+        }
+        private static void OnCompilationStart(CompilationStartAnalysisContext context)
+        {
+            var monoBehaviour = context.Compilation.GetTypeByMetadataName(MonoBehaviourMetadataName);
+            if (monoBehaviour == null) return;
+
+            var unityObject = context.Compilation.GetTypeByMetadataName(UnityObjectMetadataName);
+
+            var analyzer = new CompilationAnalyzer(monoBehaviour, unityObject);
+
             context.RegisterSyntaxNodeAction(
-                AnalyzeAllocation, 
+                analyzer.AnalyzeAllocation,
                 SyntaxKind.ObjectCreationExpression,
                 SyntaxKind.ArrayCreationExpression,
                 SyntaxKind.ImplicitArrayCreationExpression,
                 SyntaxKind.ImplicitObjectCreationExpression
             );
-            
-            context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+
+            context.RegisterSyntaxNodeAction(analyzer.AnalyzeInvocation, SyntaxKind.InvocationExpression);
         }
 
-        private static void AnalyzeAllocation(SyntaxNodeAnalysisContext context)
+        private sealed class CompilationAnalyzer
         {
-            var node = context.Node;
+            private readonly INamedTypeSymbol _monoBehaviour;
+            private readonly INamedTypeSymbol? _unityObject;
 
-            var typeInfo = context.SemanticModel.GetTypeInfo(node, context.CancellationToken);
-            var type = typeInfo.Type ?? typeInfo.ConvertedType;
-            if (type == null) return;
-
-            if (type.IsValueType && type is not IArrayTypeSymbol) return;
-
-            string allocatedTypeName = node switch
+            internal CompilationAnalyzer(INamedTypeSymbol monoBehaviour, INamedTypeSymbol? unityObject)
             {
-                ObjectCreationExpressionSyntax obj => obj.Type.ToString(),
-                ArrayCreationExpressionSyntax arr => arr.Type.ToString(),
-                _ => type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
-            };
-
-            if (TryGetHotPathMethod(node, context.SemanticModel, out var methodName))
-            {
-                var diagnostic = Diagnostic.Create(
-                    Rule,
-                    node.GetLocation(),
-                    methodName,
-                    allocatedTypeName
-                );
-
-                context.ReportDiagnostic(diagnostic);
+                _monoBehaviour = monoBehaviour;
+                _unityObject = unityObject;
             }
-        }
 
-        private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
-        {
-            var invocation = (InvocationExpressionSyntax)context.Node;
-
-            if (!IsInstantiateCall(invocation, context.SemanticModel)) return;
-
-            if (TryGetHotPathMethod(invocation, context.SemanticModel, out var methodName))
+            internal void AnalyzeAllocation(SyntaxNodeAnalysisContext context)
             {
-                var diagnostic = Diagnostic.Create(
-                    Rule,
-                    invocation.GetLocation(),
-                    methodName,
-                    "Instantiate");
+                var node = context.Node;
 
-                context.ReportDiagnostic(diagnostic);
-            }
-        }
+                var typeInfo = context.SemanticModel.GetTypeInfo(node, context.CancellationToken);
+                var type = typeInfo.Type ?? typeInfo.ConvertedType;
+                if (type == null) return;
 
-        private static bool IsInstantiateCall(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
-        {
-            var symbol = semanticModel.GetSymbolInfo(invocation).Symbol;
+                if (type.IsValueType && type is not IArrayTypeSymbol) return;
 
-            if (symbol is not IMethodSymbol methodSymbol)
-                return false;
-
-            if (!methodSymbol.Name.Equals("Instantiate", System.StringComparison.Ordinal))
-                return false;
-
-            return methodSymbol.IsStatic &&
-                   IsUnityEngineType(methodSymbol.ContainingType, "Object");
-        }
-
-        private static bool TryGetHotPathMethod(SyntaxNode node, SemanticModel semanticModel, out string methodName)
-        {
-            methodName = string.Empty;
-
-            var method = GetExecutingMethod(node, semanticModel);
-            if (method == null) return false;
-
-            var methodSymbol = semanticModel.GetDeclaredSymbol(method);
-            if (methodSymbol == null) return false;
-
-            if (!IsUnityMessage(methodSymbol)) return false;
-
-            methodName = methodSymbol.Name;
-            return true;
-        }
-
-        private static MethodDeclarationSyntax? GetExecutingMethod(SyntaxNode node, SemanticModel semanticModel)
-        {
-            for (var current = node.Parent; current != null; current = current.Parent)
-            {
-                switch (current)
+                string allocatedTypeName = node switch
                 {
-                    case MethodDeclarationSyntax method: return method;
+                    ObjectCreationExpressionSyntax obj => obj.Type.ToString(),
+                    ArrayCreationExpressionSyntax arr => arr.Type.ToString(),
+                    _ => type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                };
 
-                    case AnonymousFunctionExpressionSyntax lambda:
-                        if (!IsInvokedInPlace(lambda)) return null;
-                        break;
+                if (TryGetHotPathMethod(node, context.SemanticModel, out var methodName))
+                {
+                    var diagnostic = Diagnostic.Create(
+                        Rule,
+                        node.GetLocation(),
+                        methodName,
+                        allocatedTypeName
+                    );
 
-                    case LocalFunctionStatementSyntax localFunction:
-                        if (!IsCalledByDeclaringBody(localFunction, semanticModel)) return null;
-                        break;
-
-                    case BaseMethodDeclarationSyntax:
-                    case AccessorDeclarationSyntax:
-                    case BasePropertyDeclarationSyntax:
-                    case BaseFieldDeclarationSyntax:
-                    case BaseTypeDeclarationSyntax:
-                        return null;
+                    context.ReportDiagnostic(diagnostic);
                 }
             }
 
-            return null;
-        }
-
-        private static bool IsInvokedInPlace(AnonymousFunctionExpressionSyntax lambda)
-        {
-            SyntaxNode current = lambda;
-            while (current.Parent is ParenthesizedExpressionSyntax or CastExpressionSyntax)
-                current = current.Parent;
-
-            return current.Parent is InvocationExpressionSyntax invocation && invocation.Expression == current;
-        }
-
-        private static bool IsCalledByDeclaringBody(LocalFunctionStatementSyntax localFunction, SemanticModel semanticModel)
-        {
-            var localFunctionSymbol = semanticModel.GetDeclaredSymbol(localFunction);
-            if (localFunctionSymbol == null) return false;
-
-            var declaringBody = localFunction.Ancestors()
-                .FirstOrDefault(ancestor => ancestor is BaseMethodDeclarationSyntax
-                                         or AccessorDeclarationSyntax
-                                         or LocalFunctionStatementSyntax
-                                         or AnonymousFunctionExpressionSyntax);
-            if (declaringBody == null) return false;
-
-            foreach (var invocation in declaringBody.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            internal void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
             {
-                if (localFunction.Span.Contains(invocation.Span)) continue;
+                var invocation = (InvocationExpressionSyntax)context.Node;
 
-                var invokedSymbol = semanticModel.GetSymbolInfo(invocation).Symbol;
-                if (SymbolEqualityComparer.Default.Equals(invokedSymbol, localFunctionSymbol)) return true;
+                if (!IsInstantiateCall(invocation, context.SemanticModel)) return;
+
+                if (TryGetHotPathMethod(invocation, context.SemanticModel, out var methodName))
+                {
+                    var diagnostic = Diagnostic.Create(
+                        Rule,
+                        invocation.GetLocation(),
+                        methodName,
+                        "Instantiate");
+
+                    context.ReportDiagnostic(diagnostic);
+                }
             }
 
-            return false;
-        }
-
-        private static bool IsUnityMessage(IMethodSymbol methodSymbol)
-        {
-            if (!HotPathMessageSignatures.TryGetValue(methodSymbol.Name, out var expectedParameterType))
-                return false;
-
-            // Unity only invokes instance messages, and never a generic method definition.
-            if (methodSymbol.IsStatic || methodSymbol.IsGenericMethod) return false;
-
-            if (!HasExpectedParameters(methodSymbol, expectedParameterType)) return false;
-
-            var containingType = methodSymbol.ContainingType;
-            while (containingType != null)
+            private bool IsInstantiateCall(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
             {
-                if (IsUnityEngineType(containingType, "MonoBehaviour"))
+                if (_unityObject == null) return false;
+
+                var symbol = semanticModel.GetSymbolInfo(invocation).Symbol;
+
+                if (symbol is not IMethodSymbol methodSymbol)
+                    return false;
+
+                if (!methodSymbol.Name.Equals("Instantiate", System.StringComparison.Ordinal))
+                    return false;
+
+                return methodSymbol.IsStatic &&
+                       SymbolEqualityComparer.Default.Equals(methodSymbol.ContainingType?.OriginalDefinition, _unityObject);
+            }
+
+            private bool TryGetHotPathMethod(SyntaxNode node, SemanticModel semanticModel, out string methodName)
+            {
+                methodName = string.Empty;
+
+                var method = GetExecutingMethod(node, semanticModel);
+                if (method == null) return false;
+
+                var methodSymbol = semanticModel.GetDeclaredSymbol(method);
+                if (methodSymbol == null) return false;
+
+                if (!IsUnityMessage(methodSymbol)) return false;
+
+                methodName = methodSymbol.Name;
+                return true;
+            }
+
+            private bool IsUnityMessage(IMethodSymbol methodSymbol)
+            {
+                if (!HotPathMessageSignatures.TryGetValue(methodSymbol.Name, out var expectedParameterType))
+                    return false;
+
+                if (methodSymbol.IsStatic || methodSymbol.IsGenericMethod) return false;
+
+                if (!HasExpectedParameters(methodSymbol, expectedParameterType)) return false;
+
+                var containingType = methodSymbol.ContainingType;
+                while (containingType != null)
                 {
-                    return true;
+                    if (SymbolEqualityComparer.Default.Equals(containingType.OriginalDefinition, _monoBehaviour))
+                    {
+                        return true;
+                    }
+
+                    containingType = containingType.BaseType;
                 }
 
-                containingType = containingType.BaseType;
+                return false;
             }
 
-            return false;
-        }
+            private static MethodDeclarationSyntax? GetExecutingMethod(SyntaxNode node, SemanticModel semanticModel)
+            {
+                for (var current = node.Parent; current != null; current = current.Parent)
+                {
+                    switch (current)
+                    {
+                        case MethodDeclarationSyntax method: return method;
 
-        // INamespaceSymbol.Name is only the innermost segment, so a user type in a
-        // namespace such as Game.UnityEngine would otherwise match UnityEngine.
-        private static bool IsUnityEngineType(INamedTypeSymbol? type, string typeName)
-        {
-            return type != null &&
-                   type.ContainingType == null &&
-                   type.Name.Equals(typeName, System.StringComparison.Ordinal) &&
-                   type.ContainingNamespace?.ToDisplayString().Equals("UnityEngine", System.StringComparison.Ordinal) == true;
-        }
+                        case AnonymousFunctionExpressionSyntax lambda:
+                            if (!IsInvokedInPlace(lambda)) return null;
+                            break;
 
-        private static bool HasExpectedParameters(IMethodSymbol methodSymbol, string expectedParameterType)
-        {
-            var parameters = methodSymbol.Parameters;
+                        case LocalFunctionStatementSyntax localFunction:
+                            if (!IsCalledByDeclaringBody(localFunction, semanticModel)) return null;
+                            break;
 
-            if (expectedParameterType.Length == 0)
-                return parameters.Length == 0;
+                        case BaseMethodDeclarationSyntax:
+                        case AccessorDeclarationSyntax:
+                        case BasePropertyDeclarationSyntax:
+                        case BaseFieldDeclarationSyntax:
+                        case BaseTypeDeclarationSyntax:
+                            return null;
+                    }
+                }
 
-            if (parameters.Length != 1) return false;
+                return null;
+            }
 
-            var parameter = parameters[0];
-            if (parameter.RefKind != RefKind.None) return false;
+            private static bool IsInvokedInPlace(AnonymousFunctionExpressionSyntax lambda)
+            {
+                SyntaxNode current = lambda;
+                while (current.Parent is ParenthesizedExpressionSyntax or CastExpressionSyntax)
+                    current = current.Parent;
 
-            if (expectedParameterType.Equals("int", System.StringComparison.Ordinal))
-                return parameter.Type.SpecialType == SpecialType.System_Int32;
+                return current.Parent is InvocationExpressionSyntax invocation && invocation.Expression == current;
+            }
 
-            return parameter.Type.ToDisplayString().Equals(expectedParameterType, System.StringComparison.Ordinal);
+            private static bool IsCalledByDeclaringBody(LocalFunctionStatementSyntax localFunction, SemanticModel semanticModel)
+            {
+                var localFunctionSymbol = semanticModel.GetDeclaredSymbol(localFunction);
+                if (localFunctionSymbol == null) return false;
+
+                var declaringBody = localFunction.Ancestors()
+                    .FirstOrDefault(ancestor => ancestor is BaseMethodDeclarationSyntax
+                                             or AccessorDeclarationSyntax
+                                             or LocalFunctionStatementSyntax
+                                             or AnonymousFunctionExpressionSyntax);
+                if (declaringBody == null) return false;
+
+                foreach (var invocation in declaringBody.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    if (localFunction.Span.Contains(invocation.Span)) continue;
+
+                    var invokedSymbol = semanticModel.GetSymbolInfo(invocation).Symbol;
+                    if (SymbolEqualityComparer.Default.Equals(invokedSymbol, localFunctionSymbol)) return true;
+                }
+
+                return false;
+            }
+
+            private static bool HasExpectedParameters(IMethodSymbol methodSymbol, string expectedParameterType)
+            {
+                var parameters = methodSymbol.Parameters;
+
+                if (expectedParameterType.Length == 0)
+                    return parameters.Length == 0;
+
+                if (parameters.Length != 1) return false;
+
+                var parameter = parameters[0];
+                if (parameter.RefKind != RefKind.None) return false;
+
+                if (expectedParameterType.Equals("int", System.StringComparison.Ordinal))
+                    return parameter.Type.SpecialType == SpecialType.System_Int32;
+
+                return parameter.Type.ToDisplayString().Equals(expectedParameterType, System.StringComparison.Ordinal);
+            }
         }
     }
 }
