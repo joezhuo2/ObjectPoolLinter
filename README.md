@@ -103,6 +103,20 @@ package is not yet on nuget.org; until the first tagged release, reference the p
 OPL001 only fires on types deriving from `UnityEngine.MonoBehaviour`, so a project with no
 UnityEngine reference gets no diagnostics.
 
+### Building from source
+
+The repository builds with the .NET 10 SDK. `global.json` pins `10.0.100` with
+`rollForward: latestFeature`, so any installed `10.0.1xx` or later feature band is used; an older SDK
+fails with an error naming the required version. CI installs the SDK from the same file.
+
+```
+dotnet build ObjectPoolLinter.slnx -c Release
+dotnet test ObjectPoolLinter.slnx -c Release
+```
+
+This SDK requirement applies only to building this repository. Projects that consume the analyzer
+need only the hosts listed under [Requirements](#requirements).
+
 ### Building the Unity artifacts yourself
 
 ```

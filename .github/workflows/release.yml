@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       # The tag is the version: v1.2.3 packs as 1.2.3, v1.2.3-rc.1 as 1.2.3-rc.1. Anything that is not
       # SemVer fails here rather than producing a package nuget.org would reject. 0.x tags are a dry

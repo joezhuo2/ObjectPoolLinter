@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.4] - 2026-09-12
+
+### Build
+- The repository pins its .NET SDK. `global.json` requires SDK `10.0.100` with
+  `rollForward: latestFeature`, so any .NET 10 feature band (`10.0.1xx` and later) builds the repo, but
+  an older SDK fails fast with an error naming the required version instead of building with a
+  different compiler. Prerelease SDKs are not picked up. The build and release workflows now install
+  the SDK from `global.json` (`global-json-file`) instead of a hardcoded `10.0.x`, so CI and
+  contributors resolve the SDK from one place. Closes C3.
+
 ## [v0.9.3] - 2026-09-12
 
 ### Build
@@ -444,7 +454,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.4...HEAD
+[v0.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.3...v0.9.4
 [v0.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.2...v0.9.3
 [v0.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.1...v0.9.2
 [v0.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.0...v0.9.1
