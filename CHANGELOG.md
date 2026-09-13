@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.5] - 2026-09-12
+
+### Build
+- `samples/SampleUnityCode` is part of `ObjectPoolLinter.slnx`, so every solution build and every CI
+  run compiles it. Previously the sample was outside the solution and nothing built it.
+- New `build/verify-sample.ps1` rebuilds the sample and asserts it produces exactly the expected
+  OPL001 warnings: the two `List` allocations and the `Instantiate` call in `Update`, and the array
+  in `FixedUpdate`. Warnings are matched by allocation and method name, not by line, and the match is
+  exact, so both a lost warning and a new false positive (in `Start`, in a struct allocation, or in a
+  class that is not a `MonoBehaviour`) fail the check. The build workflow runs it after the tests.
+  Closes C4.
+- The sample keeps OPL001 as a warning under `-warnaserror` (`WarningsNotAsErrors` in its project
+  file) so CI can assert the warnings instead of failing on them.
+
+### Fixed
+- The sample no longer produces compiler warnings of its own under `Nullable` and `-warnaserror`:
+  the Unity stubs return `null!`, `PlayerBehaviour.prefab` is initialized, and the unused `Vector3`
+  local in `Update2` is discarded.
+
 ## [v0.9.4] - 2026-09-12
 
 ### Build
@@ -454,7 +473,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.5...HEAD
+[v0.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.4...v0.9.5
 [v0.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.3...v0.9.4
 [v0.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.2...v0.9.3
 [v0.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.1...v0.9.2

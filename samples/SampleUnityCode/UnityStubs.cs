@@ -4,8 +4,8 @@ namespace UnityEngine
 {
     public class Object
     {
-        public static Object Instantiate(Object original) => null;
-        public static Object Instantiate(Object original, Vector3 position, Quaternion rotation) => null;
+        public static Object Instantiate(Object original) => null!;
+        public static Object Instantiate(Object original, Vector3 position, Quaternion rotation) => null!;
     }
 
     public struct Vector3 { }

@@ -114,6 +114,14 @@ dotnet build ObjectPoolLinter.slnx -c Release
 dotnet test ObjectPoolLinter.slnx -c Release
 ```
 
+The solution includes `samples/SampleUnityCode`, a small MonoBehaviour compiled against Unity stubs
+with the analyzer attached. Building the solution prints its OPL001 warnings; those are expected. To
+check that the sample reports exactly the warnings it should, as CI does:
+
+```
+pwsh build/verify-sample.ps1
+```
+
 This SDK requirement applies only to building this repository. Projects that consume the analyzer
 need only the hosts listed under [Requirements](#requirements).
 

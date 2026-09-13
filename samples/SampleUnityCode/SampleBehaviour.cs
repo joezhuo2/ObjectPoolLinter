@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class PlayerBehaviour : MonoBehaviour
 {
-    public UnityEngine.Object prefab;
+    public UnityEngine.Object prefab = null!;
 
     // HOT PATH - should trigger OPL001 warnings
     void Update()
@@ -31,6 +31,7 @@ public class PlayerBehaviour : MonoBehaviour
     void Update2()
     {
         var v = new Vector3();
+        _ = v;
     }
 }
 

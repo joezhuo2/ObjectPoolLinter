@@ -4,6 +4,9 @@
     <Project Path="src/ObjectPoolLinter.CodeFixes/ObjectPoolLinter.CodeFixes.csproj" />
     <Project Path="src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/SampleUnityCode/SampleUnityCode.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ObjectPoolLinter.Tests/ObjectPoolLinter.Tests.csproj" />
   </Folder>

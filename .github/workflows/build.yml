@@ -40,6 +40,10 @@ jobs:
           --logger "trx;LogFileName=test-results.trx"
           --results-directory artifacts/test-results
 
+      - name: Verify sample diagnostics
+        shell: pwsh
+        run: ./build/verify-sample.ps1 -Configuration Release -NoDependencies
+
       - name: Pack
         run: dotnet pack src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj -c Release --no-build -o artifacts/nuget
 
