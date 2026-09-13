@@ -1,0 +1,142 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # The tag is the version: v1.2.3 packs as 1.2.3, v1.2.3-rc.1 as 1.2.3-rc.1. Anything that is not
+      # SemVer fails here rather than producing a package nuget.org would reject. 0.x tags are a dry
+      # run: 1.0.0 is the first published release, so they build every artifact but publish nothing.
+      - name: Resolve version
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$tag' is not v<major>.<minor>.<patch>[-prerelease]."
+            exit 1
+          fi
+          prerelease=false
+          [[ "$version" == *-* ]] && prerelease=true
+          publish=true
+          [[ "$version" == 0.* ]] && publish=false
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version $version (prerelease: $prerelease, publish: $publish)"
+
+      # The release notes are the CHANGELOG section whose heading names this tag. A tag with no
+      # section fails the run, so every release has notes.
+      - name: Extract release notes
+        run: |
+          mkdir -p artifacts
+          awk -v tag="${GITHUB_REF_NAME}" '
+            index($0, "## [" tag "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found && /^\[[^]]+\]: / { exit }
+            found { print }
+          ' CHANGELOG.md > artifacts/release-notes.md
+          if ! grep -q '[^[:space:]]' artifacts/release-notes.md; then
+            echo "::error::CHANGELOG.md has no '## [${GITHUB_REF_NAME}]' section, or it is empty."
+            exit 1
+          fi
+          cat artifacts/release-notes.md
+
+      - name: Restore
+        run: dotnet restore ObjectPoolLinter.slnx
+
+      - name: Build
+        run: >-
+          dotnet build ObjectPoolLinter.slnx -c Release --no-restore -warnaserror
+          -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet test ObjectPoolLinter.slnx -c Release --no-build
+
+      - name: Pack NuGet
+        run: >-
+          dotnet pack src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj -c Release --no-build
+          -p:Version=${{ steps.version.outputs.version }} -o artifacts/nuget
+
+      - name: Pack Unity
+        shell: pwsh
+        run: ./build/pack-unity.ps1 -SkipBuild -Version '${{ steps.version.outputs.version }}'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.version.outputs.version }}
+          path: |
+            artifacts/release-notes.md
+            artifacts/nuget/*.nupkg
+            artifacts/nuget/*.snupkg
+            artifacts/unity/*.unitypackage
+            artifacts/unity/*.tgz
+          if-no-files-found: error
+
+      # dotnet nuget push uploads the .snupkg sitting next to the .nupkg to the symbol server, so the
+      # symbols ship with the package without a second push.
+      - name: Push to nuget.org
+        if: steps.version.outputs.publish == 'true'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::The NUGET_API_KEY secret is not set."
+            exit 1
+          fi
+          dotnet nuget push "artifacts/nuget/ObjectPoolLinter.${{ steps.version.outputs.version }}.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      - name: Create GitHub release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          [ "${{ steps.version.outputs.prerelease }}" = "true" ] && flags+=(--prerelease)
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "ObjectPoolLinter ${{ steps.version.outputs.version }}" \
+            --notes-file artifacts/release-notes.md \
+            --verify-tag \
+            "${flags[@]}" \
+            artifacts/unity/*.unitypackage \
+            artifacts/unity/*.tgz \
+            artifacts/nuget/*.nupkg \
+            artifacts/nuget/*.snupkg
+
+      - name: Dry run summary
+        if: steps.version.outputs.publish != 'true'
+        run: |
+          {
+            echo "### Dry run: ${GITHUB_REF_NAME}"
+            echo
+            echo "0.x tags build every release artifact but publish nothing. Download them from the"
+            echo "\`release-${{ steps.version.outputs.version }}\` artifact on this run."
+          } >> "$GITHUB_STEP_SUMMARY"

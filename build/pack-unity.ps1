@@ -21,12 +21,17 @@
 
 .PARAMETER SkipBuild
     Package whatever is already in bin/<Configuration> instead of building first.
+
+.PARAMETER Version
+    Version to stamp on the artifacts. Defaults to the <Version> in the package project; the release
+    workflow passes the version derived from the tag.
 #>
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
     [string]$OutputDirectory,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string]$Version
 )
 
 Set-StrictMode -Version Latest
@@ -36,14 +41,19 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageProject = Join-Path $repoRoot 'src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj'
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot 'artifacts/unity' }
 
-# The package project is the single source of the version number.
-$versionNode = ([xml](Get-Content -Raw $packageProject)).SelectSingleNode('/Project/PropertyGroup/Version')
-if (-not $versionNode) { throw "No <Version> found in $packageProject." }
-$version = $versionNode.InnerText.Trim()
+# The package project is the single source of the version number unless -Version overrides it.
+if ($Version) {
+    $version = $Version.Trim()
+}
+else {
+    $versionNode = ([xml](Get-Content -Raw $packageProject)).SelectSingleNode('/Project/PropertyGroup/Version')
+    if (-not $versionNode) { throw "No <Version> found in $packageProject." }
+    $version = $versionNode.InnerText.Trim()
+}
 
 if (-not $SkipBuild) {
     Write-Host "Building $Configuration..."
-    & dotnet build $packageProject -c $Configuration --nologo
+    & dotnet build $packageProject -c $Configuration --nologo "-p:Version=$version"
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE." }
 }
 

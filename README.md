@@ -111,7 +111,16 @@ pwsh build/pack-unity.ps1
 
 Writes `ObjectPoolLinter-<version>.unitypackage` and `com.joezhuo.objectpoollinter-<version>.tgz`
 to `artifacts/unity/`. The version comes from
-`src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj`.
+`src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj` unless you pass `-Version <version>`.
+Add `-SkipBuild` to package the DLLs already in `bin/Release` instead of building first.
+
+### Releases
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`. The version comes from the tag, the release
+notes come from the `## [<tag>]` section of `CHANGELOG.md`, and the run builds, tests, and packs the
+NuGet package and both Unity artifacts. From 1.0.0 on it pushes the package to nuget.org and creates
+the GitHub release with the artifacts attached. `0.x` tags are dry runs that only upload the files
+as a workflow artifact.
 
 ## Usage
 

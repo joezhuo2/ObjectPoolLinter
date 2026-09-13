@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.3] - 2026-09-12
+
+### Build
+- The repository has a release workflow. `.github/workflows/release.yml` runs when a `v*` tag is pushed.
+  It takes the version from the tag (`v1.2.3` packs as `1.2.3`, `v1.2.3-rc.1` as a prerelease) and
+  fails on a tag that is not SemVer. It also fails on a tag with no matching `## [<tag>]` section in
+  this changelog, because that section becomes the release notes. Then it builds with `-warnaserror`,
+  runs the tests, packs the `.nupkg` and `.snupkg`, and runs `build/pack-unity.ps1` to produce the
+  `.unitypackage` and UPM `.tgz`. Every file is uploaded as a `release-<version>` workflow artifact.
+  For 1.0.0 and later, the workflow pushes the package to nuget.org with the `NUGET_API_KEY` secret
+  (`dotnet nuget push` sends the `.snupkg` next to it to the symbol server) and creates the GitHub
+  release with the changelog section as its notes and the two Unity artifacts and both NuGet packages
+  attached. A `0.x` tag is a dry run: it builds and uploads everything but publishes nothing, since
+  1.0.0 is the first published release. Closes C2.
+- `build/pack-unity.ps1` takes a `-Version` parameter that overrides the `<Version>` read from the
+  package project, so the release workflow stamps the Unity artifacts with the tag's version.
+
 ## [v0.9.2] - 2026-09-12
 
 ### Build
@@ -427,7 +444,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.3...HEAD
+[v0.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.2...v0.9.3
 [v0.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.1...v0.9.2
 [v0.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.0...v0.9.1
 [v0.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.8...v0.9.0
