@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.2] - 2026-09-12
+
+### Build
+- The repository has CI. `.github/workflows/build.yml` runs on every push to `main`, every pull request
+  and on manual dispatch: it restores, builds the solution in Release with `-warnaserror`, runs the
+  tests, and packs `ObjectPoolLinter.Package`. The `.nupkg` and `.snupkg` are uploaded as the `nuget`
+  artifact (the job fails if pack produced neither), and the TRX test results are uploaded even when
+  tests fail. Actions sets `CI=true`, so these builds get `ContinuousIntegrationBuild` from
+  `Directory.Build.props`. Closes C1.
+
 ## [v0.9.1] - 2026-09-12
 
 ### Tests
@@ -417,7 +427,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.2...HEAD
+[v0.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.1...v0.9.2
 [v0.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.0...v0.9.1
 [v0.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.8...v0.9.0
 [v0.8.8]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.8.7...v0.8.8
