@@ -96,7 +96,8 @@ namespace ObjectPoolLinter
                     : null)
                 ?? semanticModel.GetTypeInfo(objectCreation, cancellationToken).Type as INamedTypeSymbol;
 
-            if (typeSymbol == null || typeSymbol.TypeKind == TypeKind.Error) return false;
+            // A pooled struct would still be boxed at the same conversion, so the rewrite saves nothing.
+            if (typeSymbol == null || typeSymbol.TypeKind == TypeKind.Error || typeSymbol.IsValueType) return false;
 
             var poolIdentifier = SyntaxFactory.Identifier(typeSymbol.Name + "Pool");
 
@@ -183,12 +184,16 @@ namespace ObjectPoolLinter
             var statement = node.FirstAncestorOrSelf<StatementSyntax>();
             if (statement == null) return document;
 
+            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            var isBoxing = node is BaseObjectCreationExpressionSyntax &&
+                           semanticModel?.GetTypeInfo(node, cancellationToken).Type is { IsValueType: true };
+
             var leadingTrivia = statement.GetLeadingTrivia();
             var indentation = leadingTrivia.LastOrDefault(t => t.IsKind(SyntaxKind.WhitespaceTrivia));
             var endOfLine = GetEndOfLine(root);
 
             var commentTrivia = SyntaxFactory.TriviaList();
-            foreach (var line in GetPoolingCommentLines(node))
+            foreach (var line in GetPoolingCommentLines(node, isBoxing))
             {
                 commentTrivia = commentTrivia.Add(SyntaxFactory.Comment(line)).Add(endOfLine);
 
@@ -203,14 +208,25 @@ namespace ObjectPoolLinter
         // Arrays get their own wording because the object-pool fix does not apply to them and the
         // replacement is not mechanical: a rented buffer can be longer than the requested length and
         // has to be returned, so the developer has to decide the lifetime rather than accept a rewrite.
-        private static string[] GetPoolingCommentLines(SyntaxNode node) =>
-            node is ArrayCreationExpressionSyntax or ImplicitArrayCreationExpressionSyntax
-                ? new[]
+        // A boxed struct gets its own wording too: the allocation is the conversion, not the struct.
+        private static string[] GetPoolingCommentLines(SyntaxNode node, bool isBoxing)
+        {
+            if (node is ArrayCreationExpressionSyntax or ImplicitArrayCreationExpressionSyntax)
+                return new[]
                 {
                     "// TODO: avoid this per-frame array allocation. Reuse a cached buffer, or rent one",
                     "// from ArrayPool<T>.Shared - Rent can return a longer array, and it must be Returned.",
-                }
-                : new[] { "// TODO: use an object pool to avoid per-frame allocation" };
+                };
+
+            if (isBoxing)
+                return new[]
+                {
+                    "// TODO: avoid boxing this struct every frame. Keep it typed as the struct (a generic",
+                    "// parameter constrained to the interface avoids the box), or box it once and reuse it.",
+                };
+
+            return new[] { "// TODO: use an object pool to avoid per-frame allocation" };
+        }
 
         private static SyntaxTrivia GetEndOfLine(SyntaxNode root)
         {

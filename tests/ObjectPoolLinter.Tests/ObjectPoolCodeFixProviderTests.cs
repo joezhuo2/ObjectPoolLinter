@@ -763,6 +763,70 @@ public class MyBehaviour : MonoBehaviour
         }
 
         [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedForABoxedStruct()
+        {
+            var source = @"
+using UnityEngine;
+
+public struct MyStruct { }
+
+public static class MyStructPool
+{
+    public static MyStruct Get() => new MyStruct();
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        object o = new MyStruct();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task AddPoolingComment_OnBoxedStruct_UsesTheBoxingWording()
+        {
+            var source = @"
+using UnityEngine;
+
+public struct MyStruct { }
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        object o = {|#0:new MyStruct()|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public struct MyStruct { }
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: avoid boxing this struct every frame. Keep it typed as the struct (a generic
+        // parameter constrained to the interface avoids the box), or box it once and reuse it.
+        object o = {|#0:new MyStruct()|};
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, AddPoolingCommentKey, diagnosticRemains: true);
+        }
+
+        [Fact]
         public async Task AddPoolingComment_OnArrayCreation_ProducesCompilableCode()
         {
             var source = @"

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.1.0] - 2026-09-13
+
+### Added
+- OPL001 reports a struct that is boxed as it is created in a hot path: `object o = new MyStruct();`,
+  a cast to `object` or an interface, or a struct passed or returned as one. The message names the
+  target type: `'new MyStruct boxed to object' allocates inside the frequently-called method 'Update'.`
+  Previously the value-type filter dropped these before the conversion was considered. Boxing an
+  existing value (`object o = count;`), `new int?()` (which boxes to null) and struct calls to
+  non-overridden `object` methods are still not reported. Closes A8.
+- On a boxed struct, the TODO-comment fix suggests keeping the value typed as the struct or reusing a
+  single box. The object-pool `Get()` fix is not offered there, because a pooled struct is boxed
+  again at the same conversion.
+- The sample boxes a `Vector3` in `Update`; `build/verify-sample.ps1` expects the new warning.
+
+### Changed
+- Removed a dead clause from the value-type check in the OPL001 analyzer:
+  `type.IsValueType && type is not IArrayTypeSymbol` is now `type.IsValueType`. Array types are
+  never value types, so the second clause could not change the result. No behavior change.
+  Closes A7.
+
 ## [v1.0.0] - 2026-09-12
 
 First published release: the `ObjectPoolLinter` package on nuget.org, plus the Unity
@@ -498,7 +518,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.1.0...HEAD
+[v1.1.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.5...v1.0.0
 [v0.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.4...v0.9.5
 [v0.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.3...v0.9.4

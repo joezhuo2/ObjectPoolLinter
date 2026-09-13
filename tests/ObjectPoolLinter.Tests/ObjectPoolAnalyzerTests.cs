@@ -156,6 +156,106 @@ public class MyBehaviour : MonoBehaviour
         }
 
         [Fact]
+        public async Task NewStructBoxedToObjectInUpdate_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public struct MyStruct { }
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        object o = {|#0:new MyStruct()|};
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("new MyStruct boxed to object", "Update");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        [Fact]
+        public async Task NewStructBoxedByCastAndArgument_ReportsDiagnostics()
+        {
+            var source = @"
+using UnityEngine;
+
+public interface IShape { }
+public struct Circle : IShape { }
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var o = (object){|#0:new Circle()|};
+        Consume({|#1:new Circle()|});
+        System.Func<IShape> make = () => new Circle();
+    }
+
+    void Consume(IShape shape) { }
+}
+";
+
+            await VerifyAnalyzerAsync(
+                source,
+                new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                    .WithLocation(0).WithArguments("new Circle boxed to object", "Update"),
+                new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                    .WithLocation(1).WithArguments("new Circle boxed to IShape", "Update"));
+        }
+
+        [Fact]
+        public async Task NewStructNotBoxed_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public interface IShape { }
+public struct Circle : IShape { }
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        Circle c = new Circle();
+        int? none = new int?();
+        object boxedNull = new int?();
+        Take(new Circle());
+    }
+
+    void Take<T>(T shape) where T : IShape { }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task NewStructBoxedOutsideHotPath_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public struct MyStruct { }
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Start()
+    {
+        object o = new MyStruct();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
         public async Task NewObjectInNonMonoBehaviourClass_DoesNotReport()
         {
             var source = @"

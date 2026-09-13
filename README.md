@@ -6,12 +6,12 @@ A Roslyn analyzer for Unity C# that detects object allocations in hot paths (lik
 
 ## Features
 
-- **Detects allocations in Unity hot paths**: Flags `new` object allocations and `Object.Instantiate()` calls inside frequently-called Unity methods
+- **Detects allocations in Unity hot paths**: Flags `new` object allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` calls inside frequently-called Unity methods
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Code fixes**: Provides quick actions to replace allocations with object pool `Get()` calls or add TODO comments
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
-What the rule deliberately does not cover — call-graph analysis, boxing, string and LINQ allocation,
+What the rule deliberately does not cover — call-graph analysis, most boxing, string and LINQ allocation,
 allocating Unity APIs, and the two allocation shapes with no replacement fix — is listed under
 [Known limitations](#known-limitations).
 
@@ -165,7 +165,8 @@ When a diagnostic is reported, you can apply one of these quick fixes:
 
 1. **Replace with object pool Get()** - Replaces `new Type(args)` with `TypePool.Get(args)`
 2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling (array allocations get
-   an array-specific comment pointing at `ArrayPool<T>.Shared`)
+   an array-specific comment pointing at `ArrayPool<T>.Shared`; boxed structs get one about avoiding
+   the box)
 
 Constructor arguments are forwarded to `Get()` unchanged, so `new Enemy(hp)` becomes
 `EnemyPool.Get(hp)`. The pool itself is yours to write: the fix is only offered when a matching pool
@@ -294,8 +295,10 @@ callback — escapes the rule on purpose, because how often it runs is no longer
 `UnityEngine.Object.Instantiate` calls. It does not flag string concatenation or interpolation,
 closure capture, implicit `params` arrays, LINQ operators, or the allocating Unity APIs people hit
 most in `Update` (`GetComponentsInChildren`, `Physics.RaycastAll`, `GameObject.Find`,
-`Camera.allCameras`, `Input.touches`). Boxing is also missed: `object o = new MyStruct();` allocates,
-but the value-type filter drops it before the conversion is considered. Covering these is planned as
+`Camera.allCameras`, `Input.touches`). Boxing is caught only when a struct is boxed as it is created
+(`object o = new MyStruct();`, `Consume((IShape)new Circle())`); boxing an existing value
+(`object o = count;`), `new int?()` (which boxes to null), and calls to non-overridden `object`
+methods on a struct are not reported. Covering these is planned as
 separate rules (OPL002+), not as a widening of OPL001 — a clean OPL001 run is not a claim that a
 method is allocation-free.
 

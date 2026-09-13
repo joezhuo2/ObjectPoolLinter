@@ -13,6 +13,10 @@ public class PlayerBehaviour : MonoBehaviour
 
         // Warning: Instantiate in Update
         UnityEngine.Object.Instantiate(prefab);
+
+        // Warning: struct boxed to object in Update
+        object boxed = new Vector3();
+        _ = boxed;
     }
 
     void FixedUpdate()
@@ -27,7 +31,7 @@ public class PlayerBehaviour : MonoBehaviour
         var list = new System.Collections.Generic.List<int>();
     }
 
-    // Struct allocation - should NOT warn (value type)
+    // Struct allocation - should NOT warn (value type, not boxed)
     void Update2()
     {
         var v = new Vector3();

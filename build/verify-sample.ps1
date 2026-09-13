@@ -33,6 +33,7 @@ $expected = @(
     'new List<int> in Update'
     'new List<string> in Update'
     'Instantiate in Update'
+    'new Vector3 boxed to object in Update'
     'new int[] in FixedUpdate'
 )
 
