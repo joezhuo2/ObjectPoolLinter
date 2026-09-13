@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.0] - 2026-09-12
+
+First published release: the `ObjectPoolLinter` package on nuget.org, plus the Unity
+`.unitypackage` and UPM `.tgz` attached to the GitHub release. The 0.x versions below were never
+published.
+
+### Changed
+- The OPL001 message names the allocation consistently and puts it first:
+  `'new List<int>' allocates inside the frequently-called method 'Update'.` Allocations are named
+  from the resolved type rather than the source text, so `new System.Collections.Generic.List<int>()`,
+  `new List<int>()` and `new()` all read `new List<int>`, and arrays read as their type
+  (`new int[]`) instead of echoing the size (`int[10]`). `Instantiate` calls read
+  `'Instantiate' allocates inside ...` rather than `'Instantiate' is allocated inside ...`.
+  Anything that parses the message text needs the new wording; `build/verify-sample.ps1` is updated.
+- The message format arguments are in reading order: `{0}` is the allocation, `{1}` the method.
+  Closes A6.
+- OPL001 moved from `AnalyzerReleases.Unshipped.md` to a `Release 1.0.0` section in
+  `AnalyzerReleases.Shipped.md`.
+
+### Build
+- The release workflow publishes to nuget.org with Trusted Publishing instead of the static
+  `NUGET_API_KEY` secret. `NuGet/login@v1` exchanges the job's GitHub OIDC token for a one-hour API
+  key, so no long-lived key is stored. The workflow now requests `id-token: write` and reads the
+  nuget.org profile name from the `NUGET_USER` secret.
+
 ## [v0.9.5] - 2026-09-12
 
 ### Build
@@ -473,7 +498,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.0.0...HEAD
+[v1.0.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.5...v1.0.0
 [v0.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.4...v0.9.5
 [v0.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.3...v0.9.4
 [v0.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.2...v0.9.3

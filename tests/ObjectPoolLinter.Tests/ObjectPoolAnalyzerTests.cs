@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -89,7 +89,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -112,7 +112,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "Instantiate");
+                .WithArguments("Instantiate", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -188,7 +188,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("FixedUpdate", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "FixedUpdate");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -232,7 +232,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -259,7 +259,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -390,7 +390,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("OnTriggerStay", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "OnTriggerStay");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -448,7 +448,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("OnCollisionStay2D", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "OnCollisionStay2D");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -470,7 +470,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("OnAnimatorIK", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "OnAnimatorIK");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -620,7 +620,7 @@ public class MyBehaviour : UnityEngine.MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "Update");
 
             await VerifyWithoutUnityAsync(source, expected);
         }
@@ -642,7 +642,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "int[10]");
+                .WithArguments("new int[]", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -664,7 +664,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "int[]");
+                .WithArguments("new int[]", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -686,7 +686,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "List<int>");
+                .WithArguments("new List<int>", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -750,7 +750,7 @@ public class MyBehaviour : MiddleBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -775,7 +775,7 @@ public class Outer : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments("Update", "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }
@@ -840,7 +840,7 @@ public class MyBehaviour : MonoBehaviour
 
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
-                .WithArguments(messageName, "System.Collections.Generic.List<int>");
+                .WithArguments("new List<int>", messageName);
 
             await VerifyAnalyzerAsync(source, expected);
         }

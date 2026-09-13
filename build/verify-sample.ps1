@@ -30,10 +30,10 @@ $ErrorActionPreference = 'Stop'
 
 # One entry per OPL001 warning in samples/SampleUnityCode/SampleBehaviour.cs: '<allocation> in <method>'.
 $expected = @(
-    'System.Collections.Generic.List<int> in Update'
-    'List<string> in Update'
+    'new List<int> in Update'
+    'new List<string> in Update'
     'Instantiate in Update'
-    'int[10] in FixedUpdate'
+    'new int[] in FixedUpdate'
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -51,7 +51,7 @@ $output | Write-Host
 if ($exitCode -ne 0) { throw "Sample build failed with exit code $exitCode." }
 
 # MSBuild can echo a warning more than once; key on file(line,col) to count each diagnostic once.
-$pattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL001: ''(?<allocation>.+?)'' is allocated inside the frequently-called method ''(?<method>.+?)''\.'
+$pattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL001: ''(?<allocation>.+?)'' allocates inside the frequently-called method ''(?<method>.+?)''\.'
 $byLocation = [ordered]@{}
 foreach ($line in $output) {
     $match = [regex]::Match($line, $pattern)

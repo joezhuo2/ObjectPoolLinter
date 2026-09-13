@@ -15,7 +15,7 @@ namespace ObjectPoolLinter
 
         private const string Category = "Performance";
         private static readonly LocalizableString Title = "Object allocation in hot path";
-        private static readonly LocalizableString MessageFormat = "'{1}' is allocated inside the frequently-called method '{0}'. Consider using an object pool to avoid per-frame allocations.";
+        private static readonly LocalizableString MessageFormat = "'{0}' allocates inside the frequently-called method '{1}'. Consider using an object pool to avoid per-frame allocations.";
         private static readonly LocalizableString Description = "Allocating objects inside frequently-invoked Unity methods (such as Update) causes garbage collection pressure and frame hitches. Reuse instances via an object pool instead.";
 
         // Points at the default branch rather than a tag: a shipped analyzer keeps linking to the
@@ -111,20 +111,17 @@ namespace ObjectPoolLinter
 
                 if (type.IsValueType && type is not IArrayTypeSymbol) return;
 
-                string allocatedTypeName = node switch
-                {
-                    ObjectCreationExpressionSyntax obj => obj.Type.ToString(),
-                    ArrayCreationExpressionSyntax arr => arr.Type.ToString(),
-                    _ => type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
-                };
-
                 if (TryGetHotPathMethod(node, context.SemanticModel, out var methodName))
                 {
+                    // Named from the symbol, not the syntax, so `new System.Collections.Generic.List<int>()`,
+                    // `new List<int>()` and `new()` all read `new List<int>`, and `new int[10]` reads `new int[]`.
+                    var allocation = "new " + type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+
                     var diagnostic = Diagnostic.Create(
                         Rule,
                         node.GetLocation(),
-                        methodName,
-                        allocatedTypeName
+                        allocation,
+                        methodName
                     );
 
                     context.ReportDiagnostic(diagnostic);
@@ -142,8 +139,8 @@ namespace ObjectPoolLinter
                     var diagnostic = Diagnostic.Create(
                         Rule,
                         invocation.GetLocation(),
-                        methodName,
-                        "Instantiate");
+                        "Instantiate",
+                        methodName);
 
                     context.ReportDiagnostic(diagnostic);
                 }

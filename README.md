@@ -144,6 +144,11 @@ NuGet package and both Unity artifacts. From 1.0.0 on it pushes the package to n
 the GitHub release with the artifacts attached. `0.x` tags are dry runs that only upload the files
 as a workflow artifact.
 
+Publishing uses nuget.org [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing),
+so the repository stores no API key. It needs two things set up once: a Trusted Publishing policy on
+nuget.org for this repository and the `release.yml` workflow, and a `NUGET_USER` repository secret
+holding the nuget.org profile name (not the email address) that owns the policy.
+
 ## Usage
 
 The analyzer runs automatically during build and in IDEs that support Roslyn analyzers (Visual Studio, VS Code with C# Dev Kit, Rider).
