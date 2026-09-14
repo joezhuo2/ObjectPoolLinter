@@ -9,7 +9,7 @@
 
   <PropertyGroup>
     <PackageId>ObjectPoolLinter</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Joe Zhuo</Authors>
     <Copyright>Copyright (c) 2026 Joe Zhuo</Copyright>
     <Description>Roslyn analyzer for Unity C# that flags object allocations in hot paths and offers code fixes that route them through an object pool, minimizing GC and frame hitches.</Description>

@@ -16,6 +16,19 @@ definitions as well, see "Scoping the analyzer" in the repository README.
 `ObjectPoolLinter.CodeFixes.dll` is only used by IDEs (Rider, Visual Studio, VS Code). The compiler
 ignores it; Unity's compile pipeline never loads `Microsoft.CodeAnalysis.CSharp.Workspaces`.
 
+## Configuring hot methods
+
+List extra hot methods or excluded types in `.editorconfig`:
+
+```ini
+[*.cs]
+object_pool_linter.additional_hot_methods = Tick, OnPreCull
+object_pool_linter.excluded_types = LoadingScreen
+```
+
+IDEs honour these options. Unity's own editor compile has not been verified to pass them to
+analyzers. Details: `docs/rules/OPL001.md#configuration` in the repository.
+
 ## Suppressing the rule
 
 Add `dotnet_diagnostic.OPL001.severity = none` to a `.editorconfig` at your project root, or use

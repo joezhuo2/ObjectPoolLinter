@@ -47,3 +47,22 @@ public class PlainClass
         var list = new System.Collections.Generic.List<int>();
     }
 }
+
+// Custom update loop listed in .editorconfig (additional_hot_methods = Tick) - should warn
+public class Simulation
+{
+    public void Tick(float deltaTime)
+    {
+        // Warning: List<float> allocated in Tick
+        var samples = new System.Collections.Generic.List<float>();
+    }
+}
+
+// Listed in .editorconfig (excluded_types = LoadingScreen) - should NOT warn
+public class LoadingScreen : MonoBehaviour
+{
+    void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}

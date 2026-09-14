@@ -8,6 +8,7 @@ A Roslyn analyzer for Unity C# that detects object allocations in hot paths (lik
 
 - **Detects allocations in Unity hot paths**: Flags `new` object allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` calls inside frequently-called Unity methods
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
+- **Configurable**: add your own hot methods (`Tick`, `OnPreCull`, custom update loops) or exclude types from `.editorconfig` - see [Configuration](#configuration)
 - **Code fixes**: Provides quick actions to replace allocations with object pool `Get()` calls or add TODO comments
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
@@ -100,8 +101,9 @@ This adds it as an analyzer reference, so the rule runs on every build with no e
 package is not yet on nuget.org; until the first tagged release, reference the projects directly
 (see `samples/SampleUnityCode/SampleUnityCode.csproj`) or use the Unity artifacts above.
 
-OPL001 only fires on types deriving from `UnityEngine.MonoBehaviour`, so a project with no
-UnityEngine reference gets no diagnostics.
+OPL001 only runs when the compilation references `UnityEngine.MonoBehaviour`, so a project with no
+UnityEngine reference gets no diagnostics. Its built-in messages fire only on types deriving from
+`MonoBehaviour`; methods added through [Configuration](#configuration) fire on any type.
 
 ### Building from source
 
@@ -158,6 +160,23 @@ how to change its severity or suppress it.
 
 Its boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing.
+
+### Configuration
+
+The 18 built-in Unity messages can be extended, and types excluded, from `.editorconfig`:
+
+```ini
+[*.cs]
+# Also treat these methods as hot paths: any type, any signature. Type.Method limits one to a type.
+object_pool_linter.additional_hot_methods = Tick, Simulate, OnPreCull, EnemyBrain.Think
+
+# Never report inside methods declared on these types (simple or namespace-qualified names).
+object_pool_linter.excluded_types = LoadingScreen, Game.Editor.GizmoDrawer
+```
+
+Names are case-sensitive, and an exclusion does not extend to derived types. The matching rules, and
+the caveat that Unity's own editor compile has not been verified to pass these options through, are
+in [docs/rules/OPL001.md](docs/rules/OPL001.md#configuration).
 
 ### Code Fixes
 

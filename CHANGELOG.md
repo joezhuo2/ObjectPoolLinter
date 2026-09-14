@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.2.0] - 2026-09-13
+
+### Added
+- OPL001 reads two `.editorconfig` options. Closes A9.
+  - `object_pool_linter.additional_hot_methods`: comma-separated method names treated as hot paths in
+    addition to the 18 built-in Unity messages, for custom update loops (`Tick`, `Simulate`) and
+    messages the list leaves out (`OnPreCull`). A bare name matches on any type with any signature;
+    `Type.Method` limits the entry to one type.
+  - `object_pool_linter.excluded_types`: comma-separated type names, simple or namespace-qualified,
+    whose methods are never reported. It applies to methods declared on the listed type, not to
+    derived types, and wins over `additional_hot_methods`.
+  - Names are case-sensitive and options are read per file. Documented under
+    [Configuration](docs/rules/OPL001.md#configuration), including the caveat that Unity's own editor
+    compile has not been verified to pass the options to analyzers.
+- The sample has an `.editorconfig` that adds `Tick` and excludes `LoadingScreen`;
+  `build/verify-sample.ps1` expects the new `Tick` warning and none from `LoadingScreen`.
+
 ## [v1.1.0] - 2026-09-13
 
 ### Added
@@ -518,7 +535,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.2.0...HEAD
+[v1.2.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.5...v1.0.0
 [v0.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.4...v0.9.5

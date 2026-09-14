@@ -35,6 +35,7 @@ $expected = @(
     'Instantiate in Update'
     'new Vector3 boxed to object in Update'
     'new int[] in FixedUpdate'
+    'new List<float> in Tick'   # from samples/SampleUnityCode/.editorconfig
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot

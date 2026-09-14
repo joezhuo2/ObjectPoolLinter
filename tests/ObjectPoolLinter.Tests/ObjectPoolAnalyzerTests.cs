@@ -47,6 +47,21 @@ namespace UnityEngine
             return test.RunAsync();
         }
 
+        // Verifies with an .editorconfig at the project root holding the given option lines.
+        private static Task VerifyWithEditorConfigAsync(string source, string editorConfigOptions, params DiagnosticResult[] expected)
+        {
+            var test = new Test
+            {
+                TestCode = source,
+                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+            };
+
+            test.TestState.Sources.Add(UnityStub);
+            test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", "root = true\n\n[*]\n" + editorConfigOptions + "\n"));
+            test.ExpectedDiagnostics.AddRange(expected);
+            return test.RunAsync();
+        }
+
         // Verifies a compilation that does not reference the Unity stub, so the analyzer sees no
         // UnityEngine types at all.
         private static Task VerifyWithoutUnityAsync(string source, params DiagnosticResult[] expected)
@@ -968,6 +983,258 @@ public class MyBehaviour : MonoBehaviour
 ";
 
             await VerifyAnalyzerAsync(source);
+        }
+
+        [Fact]
+        public async Task AdditionalHotMethod_OnPlainClassWithParameters_ReportsDiagnostic()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Simulation
+{
+    public void Tick(float deltaTime)
+    {
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("new List<int>", "Tick");
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.additional_hot_methods = Tick", expected);
+        }
+
+        [Fact]
+        public async Task AdditionalHotMethod_NotConfigured_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Simulation
+{
+    public void Tick(float deltaTime)
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.additional_hot_methods = Simulate");
+        }
+
+        [Fact]
+        public async Task AdditionalHotMethods_ListWithSpacesAndEmptyEntries_ReportsEach()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Simulation : MonoBehaviour
+{
+    public static void Tick()
+    {
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
+    }
+
+    void OnPreCull()
+    {
+        {|#1:Object.Instantiate(this)|};
+    }
+}
+";
+
+            var tick = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("new List<int>", "Tick");
+            var onPreCull = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(1)
+                .WithArguments("Instantiate", "OnPreCull");
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.additional_hot_methods = Tick , ,OnPreCull,", tick, onPreCull);
+        }
+
+        [Fact]
+        public async Task AdditionalHotMethod_IsCaseSensitive()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Simulation
+{
+    public void Tick()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.additional_hot_methods = tick");
+        }
+
+        [Theory]
+        [InlineData("Enemy.Think")]
+        [InlineData("Game.Enemy.Think")]
+        [InlineData("global::Game.Enemy.Think")]
+        public async Task AdditionalHotMethod_TypeQualified_ReportsOnlyOnThatType(string entry)
+        {
+            var source = @"
+using UnityEngine;
+
+namespace Game
+{
+    public class Enemy
+    {
+        public void Think()
+        {
+            var list = {|#0:new System.Collections.Generic.List<int>()|};
+        }
+    }
+
+    public class Ally
+    {
+        public void Think()
+        {
+            var list = new System.Collections.Generic.List<int>();
+        }
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("new List<int>", "Think");
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.additional_hot_methods = " + entry, expected);
+        }
+
+        [Theory]
+        [InlineData("LoadingScreen")]
+        [InlineData("Game.UI.LoadingScreen")]
+        public async Task ExcludedType_SuppressesBuiltInMessages(string entry)
+        {
+            var source = @"
+using UnityEngine;
+
+namespace Game.UI
+{
+    public class LoadingScreen : MonoBehaviour
+    {
+        void Update()
+        {
+            var list = new System.Collections.Generic.List<int>();
+        }
+    }
+
+    public class Hud : MonoBehaviour
+    {
+        void Update()
+        {
+            var list = {|#0:new System.Collections.Generic.List<int>()|};
+        }
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("new List<int>", "Update");
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.excluded_types = " + entry, expected);
+        }
+
+        [Fact]
+        public async Task ExcludedType_NestedTypeByQualifiedName_Suppresses()
+        {
+            var source = @"
+using UnityEngine;
+
+namespace Game
+{
+    public class Outer
+    {
+        public class Inner : MonoBehaviour
+        {
+            void Update()
+            {
+                var list = new System.Collections.Generic.List<int>();
+            }
+        }
+    }
+}
+";
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.excluded_types = Game.Outer.Inner");
+        }
+
+        [Fact]
+        public async Task ExcludedType_DoesNotExtendToDerivedTypes()
+        {
+            var source = @"
+using UnityEngine;
+
+public class BaseScreen : MonoBehaviour
+{
+}
+
+public class LoadingScreen : BaseScreen
+{
+    void Update()
+    {
+        var list = {|#0:new System.Collections.Generic.List<int>()|};
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("new List<int>", "Update");
+
+            await VerifyWithEditorConfigAsync(source, "object_pool_linter.excluded_types = BaseScreen", expected);
+        }
+
+        [Fact]
+        public async Task ExcludedType_WinsOverAdditionalHotMethod()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Simulation
+{
+    public void Tick()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyWithEditorConfigAsync(
+                source,
+                "object_pool_linter.additional_hot_methods = Tick\nobject_pool_linter.excluded_types = Simulation");
+        }
+
+        [Fact]
+        public async Task Options_WithoutUnity_DoNotReport()
+        {
+            var source = @"
+public class Simulation
+{
+    public void Tick()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            var test = new Test
+            {
+                TestCode = source,
+                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+            };
+            test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", "root = true\n\n[*]\nobject_pool_linter.additional_hot_methods = Tick\n"));
+
+            await test.RunAsync();
         }
 
         private sealed class Test : AnalyzerTest<DefaultVerifier>
