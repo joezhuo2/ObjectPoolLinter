@@ -2,18 +2,25 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A Roslyn analyzer for Unity C# that detects object allocations in hot paths (like `Update`, `FixedUpdate`, etc.) and suggests using object pools to avoid garbage collection pressure and frame hitches.
+A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Update`, `FixedUpdate`, etc.) and suggests using object pools, cached results or non-allocating APIs to avoid garbage collection pressure and frame hitches.
 
 ## Features
 
-- **Detects allocations in Unity hot paths**: Flags `new` object allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` calls inside frequently-called Unity methods
+- **Three rules for Unity hot paths**:
+
+  | Rule | Reports | Default |
+  | --- | --- | --- |
+  | [OPL001](docs/rules/OPL001.md) | `new` allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` | Warning |
+  | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ, and boxing | Info |
+  | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`) and `name` / `tag` | Warning |
+
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `OnPreCull`, custom update loops) or exclude types from `.editorconfig` - see [Configuration](#configuration)
-- **Code fixes**: Provides quick actions to replace allocations with object pool `Get()` calls or add TODO comments
+- **Code fixes** (OPL001): Provides quick actions to replace allocations with object pool `Get()` calls or add TODO comments
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
-What the rule deliberately does not cover — call-graph analysis, most boxing, string and LINQ allocation,
-allocating Unity APIs, and the two allocation shapes with no replacement fix — is listed under
+What the rules deliberately do not cover — call-graph analysis, allocations the analyzer cannot see
+statically, and the allocation shapes with no replacement fix — is listed under
 [Known limitations](#known-limitations).
 
 ## Requirements
@@ -65,7 +72,8 @@ each DLL in the Inspector:
    exactly that way.
 4. Click **Apply**.
 
-Unity recompiles and OPL001 appears in the Console.
+Unity recompiles and OPL001 and OPL003 appear in the Console. OPL002 is Info by default, which the
+Console does not show; raise it to a warning (below) to see it there.
 
 **Tested on Unity 6000.4.6f1** (Unity 6), where both artifacts import cleanly and OPL001 is reported
 during a batch-mode compile. The analyzer targets Roslyn 3.8, which Unity's documentation names as
@@ -83,10 +91,16 @@ the analyzer DLLs from those assembly definitions.
 The UPM package contains no `.asmdef` either, so the packaged form also covers the predefined
 assemblies.
 
-#### Turning the rule off
+#### Changing a rule's severity
 
-Add `dotnet_diagnostic.OPL001.severity = none` to a `.editorconfig` at the project root, or wrap a
-single allocation in `#pragma warning disable OPL001`.
+Add `dotnet_diagnostic.<rule>.severity = <level>` to a `.editorconfig` at the project root, or wrap a
+single allocation in `#pragma warning disable <rule>`:
+
+```ini
+[*.cs]
+dotnet_diagnostic.OPL001.severity = none      # turn OPL001 off
+dotnet_diagnostic.OPL002.severity = warning   # show OPL002 in the Unity Console
+```
 
 ### Unity code compiled outside the editor
 
@@ -101,8 +115,8 @@ This adds it as an analyzer reference, so the rule runs on every build with no e
 package is not yet on nuget.org; until the first tagged release, reference the projects directly
 (see `samples/SampleUnityCode/SampleUnityCode.csproj`) or use the Unity artifacts above.
 
-OPL001 only runs when the compilation references `UnityEngine.MonoBehaviour`, so a project with no
-UnityEngine reference gets no diagnostics. Its built-in messages fire only on types deriving from
+The rules only run when the compilation references `UnityEngine.MonoBehaviour`, so a project with no
+UnityEngine reference gets no diagnostics. The built-in messages fire only on types deriving from
 `MonoBehaviour`; methods added through [Configuration](#configuration) fire on any type.
 
 ### Building from source
@@ -117,7 +131,8 @@ dotnet test ObjectPoolLinter.slnx -c Release
 ```
 
 The solution includes `samples/SampleUnityCode`, a small MonoBehaviour compiled against Unity stubs
-with the analyzer attached. Building the solution prints its OPL001 warnings; those are expected. To
+with the analyzer attached. Building the solution prints its OPL001, OPL002 and OPL003 warnings; those
+are expected. To
 check that the sample reports exactly the warnings it should, as CI does:
 
 ```
@@ -155,15 +170,16 @@ holding the nuget.org profile name (not the email address) that owns the policy.
 
 The analyzer runs automatically during build and in IDEs that support Roslyn analyzers (Visual Studio, VS Code with C# Dev Kit, Rider).
 
-The rule it reports is documented in [docs/rules/OPL001.md](docs/rules/OPL001.md), which also covers
-how to change its severity or suppress it.
+Each rule is documented in its own page, which also covers how to change its severity or suppress it:
+[OPL001](docs/rules/OPL001.md), [OPL002](docs/rules/OPL002.md), [OPL003](docs/rules/OPL003.md).
 
-Its boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
+Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing.
 
 ### Configuration
 
-The 18 built-in Unity messages can be extended, and types excluded, from `.editorconfig`:
+The 18 built-in Unity messages can be extended, and types excluded, from `.editorconfig`. The options
+apply to all three rules:
 
 ```ini
 [*.cs]
@@ -180,7 +196,8 @@ in [docs/rules/OPL001.md](docs/rules/OPL001.md#configuration).
 
 ### Code Fixes
 
-When a diagnostic is reported, you can apply one of these quick fixes:
+When an OPL001 diagnostic is reported, you can apply one of these quick fixes (OPL002 and OPL003 have
+none; their pages list the manual fix for each construct):
 
 1. **Replace with object pool Get()** - Replaces `new Type(args)` with `TypePool.Get(args)`
 2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling (array allocations get
@@ -299,27 +316,34 @@ the type you are pooling.
 
 ## Known limitations
 
-OPL001 is deliberately narrow: it reports allocations it can see in a hot-path body and offers a fix
-only when that fix cannot change behaviour. The gaps below are known and intentional for this
-version, not bugs.
+The rules are deliberately narrow: they report allocations they can see in a hot-path body, and OPL001
+offers a fix only when that fix cannot change behaviour. The gaps below are known and intentional for
+this version, not bugs.
 
 **Only allocations written directly in the message body are reported.** There is no call-graph
 analysis, so `void Update() { Spawn(); }` is silent no matter what `Spawn()` allocates. An allocation
 inside a lambda or an anonymous method is attributed to whoever invokes the delegate, not to the
 message, so it is reported only when the lambda is invoked in place; a local function is reported
 only when the declaring body actually calls it. Converting either to a delegate — registering it as a
-callback — escapes the rule on purpose, because how often it runs is no longer decided by the frame.
+callback — escapes the rules on purpose, because how often it runs is no longer decided by the frame.
+(Creating that delegate in the hot path is itself an allocation, which OPL002 reports when the lambda
+captures state.)
 
-**Several allocating constructs are not detected at all.** The analyzer matches `new` expressions and
-`UnityEngine.Object.Instantiate` calls. It does not flag string concatenation or interpolation,
-closure capture, implicit `params` arrays, LINQ operators, or the allocating Unity APIs people hit
-most in `Update` (`GetComponentsInChildren`, `Physics.RaycastAll`, `GameObject.Find`,
-`Camera.allCameras`, `Input.touches`). Boxing is caught only when a struct is boxed as it is created
-(`object o = new MyStruct();`, `Consume((IShape)new Circle())`); boxing an existing value
-(`object o = count;`), `new int?()` (which boxes to null), and calls to non-overridden `object`
-methods on a struct are not reported. Covering these is planned as
-separate rules (OPL002+), not as a widening of OPL001 — a clean OPL001 run is not a claim that a
-method is allocation-free.
+**Each rule covers one family of allocation.** OPL001 matches `new` expressions and
+`UnityEngine.Object.Instantiate`. OPL002 matches string concatenation and interpolation, capturing
+lambdas, method-group delegates, implicit `params` arrays, LINQ and boxing, and is Info by default, so
+the Unity Console does not show it until it is raised to a warning. OPL003 matches `UnityEngine`
+members that return an array, plus `name` and `tag`. Still not reported by any rule:
+
+- iterator and `async` state machines, `foreach` over an interface-typed collection (which boxes the
+  enumerator), and allocations inside base class library or Unity methods other than the ones above;
+- `new int?()` (which boxes to null) and boxing of an unconstrained generic `T`, which depends on the
+  type argument at run time;
+- Unity APIs that cost CPU time without allocating, such as `GameObject.Find` and `GetComponent<T>()`;
+- Unity string properties other than `name` and `tag`, and array-returning members of managed packages
+  outside the core `UnityEngine` namespace (`UnityEngine.UI` and others).
+
+A clean run is not a claim that a method is allocation-free; a profiler is the final word.
 
 **Array allocations get no replacement fix.** `new int[4]` and `new[] { 1, 2 }` are reported, but only
 the TODO-comment fix is offered, because `ArrayPool<T>.Shared.Rent(4)` returns an array of length *at

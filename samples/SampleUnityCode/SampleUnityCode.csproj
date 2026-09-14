@@ -5,10 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <!-- The sample exists to produce OPL001. Keep those as warnings even when CI builds the
-         solution with -warnaserror, so build/verify-sample.ps1 can assert them. -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);OPL001</WarningsNotAsErrors>
-    <MSBuildWarningsNotAsErrors>$(MSBuildWarningsNotAsErrors);OPL001</MSBuildWarningsNotAsErrors>
+    <!-- The sample exists to produce OPL001, OPL002 and OPL003. Keep those as warnings even when CI
+         builds the solution with -warnaserror, so build/verify-sample.ps1 can assert them. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);OPL001;OPL002;OPL003</WarningsNotAsErrors>
+    <MSBuildWarningsNotAsErrors>$(MSBuildWarningsNotAsErrors);OPL001;OPL002;OPL003</MSBuildWarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

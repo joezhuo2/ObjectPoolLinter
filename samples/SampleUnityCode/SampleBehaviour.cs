@@ -3,10 +3,17 @@ using UnityEngine;
 public class PlayerBehaviour : MonoBehaviour
 {
     public UnityEngine.Object prefab = null!;
+    public int hp = 100;
 
-    // HOT PATH - should trigger OPL001 warnings
+    // HOT PATH - should trigger OPL001, OPL002 and OPL003 warnings
     void Update()
     {
+        // OPL002 (raised to a warning in .editorconfig): string interpolation in Update
+        var label = $"hp {hp}";
+
+        // OPL003: Camera.allCameras returns a new array in Update
+        var cameras = Camera.allCameras;
+
         // Warning: List<int> allocated in Update
         var list = new System.Collections.Generic.List<int>();
         List<string> s = new();

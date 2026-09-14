@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-    Builds samples/SampleUnityCode and asserts it produces exactly the expected OPL001 warnings.
+    Builds samples/SampleUnityCode and asserts it produces exactly the expected OPL001-OPL003 warnings.
 
 .DESCRIPTION
-    The sample is the end-to-end check that the analyzer loads from a ProjectReference and reports
+    The sample is the end-to-end check that the analyzers load from a ProjectReference and report
     through a real compilation, not just through the test harness. This script rebuilds it, collects
-    every distinct OPL001 warning from the build output, and compares them against the list below.
+    every distinct OPL warning from the build output, and compares them against the list below.
 
-    A diagnostic is identified by the allocated expression and the enclosing method, as they appear in
-    the message, rather than by line and column, so reformatting the sample does not break the check.
+    A diagnostic is identified by its rule ID, the allocation and the enclosing method, as they appear
+    in the message, rather than by line and column, so reformatting the sample does not break the check.
     The comparison is exact: a missing warning (regression) and an unexpected one (false positive, for
     example in Start or in a class that is not a MonoBehaviour) both fail.
 
@@ -28,21 +28,23 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# One entry per OPL001 warning in samples/SampleUnityCode/SampleBehaviour.cs: '<allocation> in <method>'.
+# One entry per warning in samples/SampleUnityCode/SampleBehaviour.cs: '<rule>: <allocation> in <method>'.
 $expected = @(
-    'new List<int> in Update'
-    'new List<string> in Update'
-    'Instantiate in Update'
-    'new Vector3 boxed to object in Update'
-    'new int[] in FixedUpdate'
-    'new List<float> in Tick'   # from samples/SampleUnityCode/.editorconfig
+    'OPL001: new List<int> in Update'
+    'OPL001: new List<string> in Update'
+    'OPL001: Instantiate in Update'
+    'OPL001: new Vector3 boxed to object in Update'
+    'OPL001: new int[] in FixedUpdate'
+    'OPL001: new List<float> in Tick'      # from samples/SampleUnityCode/.editorconfig
+    'OPL002: string interpolation in Update' # raised to a warning in .editorconfig
+    'OPL003: Camera.allCameras in Update'
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sampleProject = Join-Path $repoRoot 'samples/SampleUnityCode/SampleUnityCode.csproj'
 
 # --no-incremental forces the compiler to run, so warnings are reported even when the sample is
-# already up to date. -warnaserror matches CI; the sample exempts OPL001 in its project file.
+# already up to date. -warnaserror matches CI; the sample exempts the OPL rules in its project file.
 $buildArgs = @('build', $sampleProject, '-c', $Configuration, '--nologo', '--no-incremental', '-warnaserror', '-clp:NoSummary')
 if ($NoDependencies) { $buildArgs += '--no-dependencies' }
 
@@ -52,13 +54,15 @@ $exitCode = $LASTEXITCODE
 $output | Write-Host
 if ($exitCode -ne 0) { throw "Sample build failed with exit code $exitCode." }
 
-# MSBuild can echo a warning more than once; key on file(line,col) to count each diagnostic once.
-$pattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL001: ''(?<allocation>.+?)'' allocates inside the frequently-called method ''(?<method>.+?)''\.'
+# MSBuild can echo a warning more than once; key on rule and file(line,col) to count each diagnostic once.
+# OPL001 and OPL002 read "'<allocation>' allocates inside ..."; OPL003 reads "'<api>' returns a new '<type>' on every call inside ...".
+$pattern = '^(?<location>.+?\(\d+,\d+\)): warning (?<rule>OPL\d{3}): ''(?<allocation>.+?)'' (?:allocates|returns a new ''.+?'' on every call) inside the frequently-called method ''(?<method>.+?)''\.'
 $byLocation = [ordered]@{}
 foreach ($line in $output) {
     $match = [regex]::Match($line, $pattern)
     if ($match.Success) {
-        $byLocation[$match.Groups['location'].Value.Trim()] = "$($match.Groups['allocation'].Value) in $($match.Groups['method'].Value)"
+        $key = "$($match.Groups['rule'].Value) $($match.Groups['location'].Value.Trim())"
+        $byLocation[$key] = "$($match.Groups['rule'].Value): $($match.Groups['allocation'].Value) in $($match.Groups['method'].Value)"
     }
 }
 $actual = @($byLocation.Values)
@@ -67,11 +71,11 @@ $missing = @($expected | Where-Object { $actual -notcontains $_ })
 $unexpected = @($actual | Where-Object { $expected -notcontains $_ })
 
 if ($missing.Count -gt 0 -or $unexpected.Count -gt 0 -or $actual.Count -ne $expected.Count) {
-    $message = "Sample OPL001 warnings do not match. Expected $($expected.Count), found $($actual.Count)."
+    $message = "Sample OPL warnings do not match. Expected $($expected.Count), found $($actual.Count)."
     if ($missing.Count -gt 0) { $message += "`n  Missing:`n    " + ($missing -join "`n    ") }
     if ($unexpected.Count -gt 0) { $message += "`n  Unexpected:`n    " + ($unexpected -join "`n    ") }
     throw $message
 }
 
-Write-Host "Sample produced the $($expected.Count) expected OPL001 warnings:"
+Write-Host "Sample produced the $($expected.Count) expected OPL warnings:"
 $expected | ForEach-Object { Write-Host "  $_" }

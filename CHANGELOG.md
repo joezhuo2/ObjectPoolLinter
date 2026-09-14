@@ -7,10 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.3.0] - 2026-09-13
+
+### Added
+- OPL002, *Hidden allocation in hot path*, Info by default. It reports allocations with no `new` in
+  the source, in the same hot paths OPL001 watches: string concatenation (reported once per `+` chain,
+  constants excluded) and interpolation, lambdas that capture a local, a parameter or `this`,
+  method groups converted to delegates (static ones only below C# 11, which caches them), implicit
+  `params` arrays with at least one element, LINQ method chains (reported once, on the outermost call)
+  and query expressions, boxing of an existing value (`object o = count;`), and struct calls to
+  `object`, `ValueType` or `Enum` methods the struct does not override. It stays out of OPL001's way:
+  `new` expressions, including `new Action(Spawn)` and a struct boxed as it is created, are not
+  reported twice. It is Info rather than Warning so it does not bury OPL001; the Unity Console shows it
+  only after `dotnet_diagnostic.OPL002.severity = warning`. Documented in
+  [docs/rules/OPL002.md](docs/rules/OPL002.md).
+- OPL003, *Allocating Unity API in hot path*, Warning by default. It reports any method or property
+  getter declared in the core `UnityEngine` namespace that returns an array
+  (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`,
+  `Mesh.vertices`), plus reads of `Object.name`, `Component.tag` and `GameObject.tag`. Buffer-filling
+  overloads, property writes, and managed packages such as `UnityEngine.UI` are not matched.
+  `GameObject.Find` is not reported, because it allocates nothing. The message names the returned
+  type: `'Physics.RaycastAll' returns a new 'RaycastHit[]' on every call inside the frequently-called
+  method 'Update'.` Documented, with a non-allocating replacement for each API, in
+  [docs/rules/OPL003.md](docs/rules/OPL003.md).
+- Both rules honour `object_pool_linter.additional_hot_methods` and `object_pool_linter.excluded_types`.
+- The sample interpolates a string and reads `Camera.allCameras` in `Update`, and its `.editorconfig`
+  raises OPL002 to a warning. `build/verify-sample.ps1` now matches all three rules and identifies each
+  warning by rule ID as well as allocation and method.
+- 31 tests for the new rules, for 134 in total.
+
+### Changed
+- The hot-path detection and `.editorconfig` parsing moved out of `ObjectPoolAnalyzer` into a shared
+  `HotPathDetector`, so the three rules agree on which methods are hot. No behavior change for OPL001.
+- The README's `Known limitations`, the OPL001 page and the Unity package README describe the three
+  rules and the gaps that remain, replacing the note that these allocations were planned as OPL002+.
+
 ## [v1.2.0] - 2026-09-13
 
 ### Added
-- OPL001 reads two `.editorconfig` options. Closes A9.
+- OPL001 reads two `.editorconfig` options.
   - `object_pool_linter.additional_hot_methods`: comma-separated method names treated as hot paths in
     addition to the 18 built-in Unity messages, for custom update loops (`Tick`, `Simulate`) and
     messages the list leaves out (`OnPreCull`). A bare name matches on any type with any signature;
@@ -32,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   target type: `'new MyStruct boxed to object' allocates inside the frequently-called method 'Update'.`
   Previously the value-type filter dropped these before the conversion was considered. Boxing an
   existing value (`object o = count;`), `new int?()` (which boxes to null) and struct calls to
-  non-overridden `object` methods are still not reported. Closes A8.
+  non-overridden `object` methods are still not reported.
 - On a boxed struct, the TODO-comment fix suggests keeping the value typed as the struct or reusing a
   single box. The object-pool `Get()` fix is not offered there, because a pooled struct is boxed
   again at the same conversion.
@@ -42,7 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed a dead clause from the value-type check in the OPL001 analyzer:
   `type.IsValueType && type is not IArrayTypeSymbol` is now `type.IsValueType`. Array types are
   never value types, so the second clause could not change the result. No behavior change.
-  Closes A7.
 
 ## [v1.0.0] - 2026-09-12
 
@@ -59,7 +93,6 @@ published.
   `'Instantiate' allocates inside ...` rather than `'Instantiate' is allocated inside ...`.
   Anything that parses the message text needs the new wording; `build/verify-sample.ps1` is updated.
 - The message format arguments are in reading order: `{0}` is the allocation, `{1}` the method.
-  Closes A6.
 - OPL001 moved from `AnalyzerReleases.Unshipped.md` to a `Release 1.0.0` section in
   `AnalyzerReleases.Shipped.md`.
 
@@ -79,7 +112,6 @@ published.
   in `FixedUpdate`. Warnings are matched by allocation and method name, not by line, and the match is
   exact, so both a lost warning and a new false positive (in `Start`, in a struct allocation, or in a
   class that is not a `MonoBehaviour`) fail the check. The build workflow runs it after the tests.
-  Closes C4.
 - The sample keeps OPL001 as a warning under `-warnaserror` (`WarningsNotAsErrors` in its project
   file) so CI can assert the warnings instead of failing on them.
 
@@ -96,7 +128,7 @@ published.
   an older SDK fails fast with an error naming the required version instead of building with a
   different compiler. Prerelease SDKs are not picked up. The build and release workflows now install
   the SDK from `global.json` (`global-json-file`) instead of a hardcoded `10.0.x`, so CI and
-  contributors resolve the SDK from one place. Closes C3.
+  contributors resolve the SDK from one place.
 
 ## [v0.9.3] - 2026-09-12
 
@@ -111,7 +143,7 @@ published.
   (`dotnet nuget push` sends the `.snupkg` next to it to the symbol server) and creates the GitHub
   release with the changelog section as its notes and the two Unity artifacts and both NuGet packages
   attached. A `0.x` tag is a dry run: it builds and uploads everything but publishes nothing, since
-  1.0.0 is the first published release. Closes C2.
+  1.0.0 is the first published release.
 - `build/pack-unity.ps1` takes a `-Version` parameter that overrides the `<Version>` read from the
   package project, so the release workflow stamps the Unity artifacts with the tag's version.
 
@@ -123,7 +155,7 @@ published.
   tests, and packs `ObjectPoolLinter.Package`. The `.nupkg` and `.snupkg` are uploaded as the `nuget`
   artifact (the job fails if pack produced neither), and the TRX test results are uploaded even when
   tests fail. Actions sets `CI=true`, so these builds get `ContinuousIntegrationBuild` from
-  `Directory.Build.props`. Closes C1.
+  `Directory.Build.props`.
 
 ## [v0.9.1] - 2026-09-12
 
@@ -131,7 +163,6 @@ published.
 - Analyzer tests no longer hardcode diagnostic spans. The seven `.WithSpan(line, col, line, col)`
   expectations are replaced by markup in the test source (`{|#0:...|}`) with `.WithLocation(0)`, so
   reformatting a test source does not break its expectation. Message arguments are still checked.
-  Closes T3.
 
 ## [v0.9.0] - 2026-09-12
 
@@ -157,7 +188,7 @@ published.
   `Start`; a MonoBehaviour two inheritance levels deep; a MonoBehaviour nested in another
   MonoBehaviour; and a plain class nested inside a MonoBehaviour, which must stay silent. Two
   theories sweep the message table: all 18 hot-path messages report, and five cold-path messages do
-  not. 84 tests, up from 53. Closes T2.
+  not. 84 tests, up from 53.
 
 ## [v0.8.8] - 2026-09-12
 
@@ -172,7 +203,7 @@ published.
   fix (arrays, and allocations carrying an object or collection initializer); and the fact that the
   replacement fix neither writes the pool nor releases the object. Linked from the `Features` and
   `Usage` sections, and `docs/rules/OPL001.md` gains a `What the rule does not cover` section pointing
-  at it. Closes D3.
+  at it.
 
 ## [v0.8.7] - 2026-09-12
 
@@ -185,7 +216,7 @@ published.
   check (the `Get` return type and the object's lifetime), and carries copy-pasteable non-generic and
   generic pool implementations plus notes on `UnityEngine.Pool`. The `Features` bullet that claimed
   the analyzer "works with any object pool implementation" is corrected, and `docs/rules/OPL001.md`
-  links to the new section. Closes D2.
+  links to the new section.
 
 ## [v0.8.6] - 2026-09-12
 
@@ -193,7 +224,7 @@ published.
 - The README `Requirements` section now carries a supported-version table listing Unity, Visual Studio,
   the .NET SDK, Rider and VS Code with their minimum supported versions in one place, replacing the
   prose bullets that mixed Unity's Roslyn-plugin rules with IDE versions. It also states that the
-  package has no dependencies of its own and contributes nothing to build output. Closes D1.
+  package has no dependencies of its own and contributes nothing to build output.
 
 ## [v0.8.5] - 2026-09-12
 
@@ -271,8 +302,7 @@ published.
 - The `UnityEngine` namespace check compared `ContainingNamespace.Name`, which is only the innermost
   namespace segment. A user's own `Game.UnityEngine.MonoBehaviour` or `Game.UnityEngine.Object`
   therefore matched, so allocations in an `Update` on an unrelated base class produced false OPL001
-  warnings, and a look-alike static `Instantiate` was reported as a Unity instantiation. This closes
-  the gap noted in the v0.8.0 entry below.
+  warnings, and a look-alike static `Instantiate` was reported as a Unity instantiation. 
 
   Both sites (`IsUnityMessage` and `IsInstantiateCall`) now go through a shared `IsUnityEngineType`
   helper that compares the full namespace via `ContainingNamespace.ToDisplayString()` and also
@@ -535,7 +565,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.3.0...HEAD
+[v1.3.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v0.9.5...v1.0.0

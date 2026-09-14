@@ -11,7 +11,20 @@ namespace UnityEngine
     public struct Vector3 { }
     public struct Quaternion { }
 
-    public class MonoBehaviour : Object
+    public class Component : Object
     {
+    }
+
+    public class Behaviour : Component
+    {
+    }
+
+    public class MonoBehaviour : Behaviour
+    {
+    }
+
+    public class Camera : Behaviour
+    {
+        public static Camera[] allCameras => System.Array.Empty<Camera>();
     }
 }
