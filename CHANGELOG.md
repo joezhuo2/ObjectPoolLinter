@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.5.0] - 2026-09-16
+
+### Added
+- Code fixes for OPL002, in a new `HiddenAllocationCodeFixProvider`. Each is offered only for the shapes
+  it can rewrite without changing behaviour; the others are still reported, with no fix.
+  - **Cache the lambda in a field assigned in Awake()**: `Run(() => count + 1)` becomes `Run(_next)`,
+    the lambda is assigned to `_next` in `Awake()` (added when the class has none), and each captured
+    local becomes a field whose declaration turns into an assignment. Offered on a `MonoBehaviour` for
+    lambdas that capture no parameter, call no local function and are not nested in another lambda,
+    when every captured local is declared alone, with an initializer, outside a loop.
+  - **Cache the delegate in a field assigned in Awake()**: `Action callback = Spawn;` becomes
+    `Action callback = _spawn;` with `_spawn = Spawn;` in `Awake()`. Offered for methods of the class
+    itself and static methods, not for `other.Method` or local functions.
+  - **Build the string with a reused StringBuilder**: `var text = $"hp: {hp}";` becomes
+    `_textBuilder.Clear().Append("hp: ").Append(hp);` and `var text = _textBuilder.ToString();`, with a
+    `readonly StringBuilder` field and `using System.Text;` added when missing. Struct, enum and array
+    holes are appended as `(object)value` so they format as interpolation does. Not offered for
+    alignment or format clauses, conditionally evaluated strings, or statements that have side effects
+    before the string.
+  - **Replace LINQ with a loop filling a reused List&lt;T&gt;**: `Where(...).ToList()`,
+    `Select(...).ToList()` and `Where(...).Select(...).ToList()` over a `List<T>` or an array, with
+    single-parameter expression lambdas, become a `for` loop that clears and fills a `readonly List<T>`
+    field, and the result refers to that list.
+- 15 tests, for 154 in total.
+
+### Changed
+- [docs/rules/OPL002.md](docs/rules/OPL002.md) has a *Code fixes* section with before-and-after code and
+  the exact conditions for each fix. The README, the Unity package README and the NuGet description
+  mention the new fixes.
+
+### Notes
+- The new fixes have no fix-all support: each picks a free field name from the document as it stands,
+  so fixes applied in one batch could pick the same name.
+- The `StringBuilder` fix still allocates the final string, which OPL002 keeps reporting as
+  `StringBuilder.ToString()`. The LINQ fix returns the same list on every run, so a result kept past the
+  frame must be copied.
+
 ## [v1.4.0] - 2026-09-16
 
 ### Added
@@ -585,7 +622,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.0...HEAD
+[v1.5.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.4.0...v1.5.0
 [v1.4.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.1.0...v1.2.0

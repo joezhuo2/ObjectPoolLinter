@@ -16,7 +16,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `OnPreCull`, custom update loops) or exclude types from `.editorconfig` - see [Configuration](#configuration)
-- **Code fixes** (OPL001): Provides quick actions to replace allocations with object pool `Get()` calls or add TODO comments
+- **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
 What the rules deliberately do not cover — call-graph analysis, allocations the analyzer cannot see
@@ -196,8 +196,9 @@ in [docs/rules/OPL001.md](docs/rules/OPL001.md#configuration).
 
 ### Code Fixes
 
-When an OPL001 diagnostic is reported, you can apply one of these quick fixes (OPL002 and OPL003 have
-none; their pages list the manual fix for each construct):
+When an OPL001 diagnostic is reported, you can apply one of these quick fixes (OPL003 has none; its
+page lists the manual fix for each API, and OPL002's fixes are described
+[below](#opl002-code-fixes)):
 
 1. **Replace with object pool Get()** - Replaces `new Type(args)` with `TypePool.Get(args)`
 2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling (array allocations get
@@ -220,6 +221,25 @@ of length *at least* 4 rather than exactly 4, and the buffer has to be returned 
 Only the TODO-comment fix is offered, and
 [docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) covers the ways to fix an array allocation by
 hand.
+
+### OPL002 code fixes
+
+OPL002 offers a rewrite for four constructs. Each one is offered only for the shapes it can rewrite
+without changing what the code does; the other shapes are still reported, with no fix, and
+[docs/rules/OPL002.md](docs/rules/OPL002.md#code-fixes) lists exactly which shapes qualify.
+
+| Reported as | Fix | Result |
+| --- | --- | --- |
+| `lambda capturing ...` | **Cache the lambda in a field assigned in Awake()** | `Run(() => count + 1)` becomes `Run(_next)`, `_next = () => count + 1;` moves into `Awake()`, and the captured local `count` becomes a field |
+| `delegate for ...()` | **Cache the delegate in a field assigned in Awake()** | `Action callback = Spawn;` becomes `Action callback = _spawn;`, with `_spawn = Spawn;` in `Awake()` |
+| `string interpolation` | **Build the string with a reused StringBuilder** | `var text = $"hp: {hp}";` becomes `_textBuilder.Clear().Append("hp: ").Append(hp);` then `var text = _textBuilder.ToString();` |
+| `LINQ Where().Select().ToList()` | **Replace LINQ with a loop filling a reused List&lt;T&gt;** | a `for` loop over the `List<T>` or array that clears and fills a `List<T>` field, which the result then refers to |
+
+The two delegate fixes need a `MonoBehaviour`, because they rely on `Awake()` running before the hot
+method; they add `Awake()` when the class has none. The `StringBuilder` fix still leaves one allocation
+per run, the final `ToString()`, which OPL002 keeps reporting. The LINQ fix hands back the same list on
+every run, so code that keeps the result past the current frame has to copy it. None of the four has
+fix-all support.
 
 ## The pool contract
 

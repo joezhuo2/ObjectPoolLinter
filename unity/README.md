@@ -7,7 +7,9 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
   through an object pool.
 - **OPL002** (info): string concatenation and interpolation, `string.Concat`, `string.Format`,
   `StringBuilder.ToString()`, capturing lambdas, method-group delegates,
-  implicit `params` arrays, LINQ and boxing.
+  implicit `params` arrays, LINQ and boxing, with code fixes that cache lambdas and delegates in
+  `Awake()`, build interpolated strings with a reused `StringBuilder`, and turn simple LINQ chains into
+  a loop.
 - **OPL003** (warning): Unity APIs that return a new array, such as `GetComponentsInChildren<T>()`,
   `Physics.RaycastAll` and `Camera.allCameras`, plus `name` and `tag`.
 
