@@ -11,7 +11,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
   | Rule | Reports | Default |
   | --- | --- | --- |
   | [OPL001](docs/rules/OPL001.md) | `new` allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` | Warning |
-  | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ, and boxing | Info |
+  | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ, and boxing | Info |
   | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`) and `name` / `tag` | Warning |
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
@@ -330,8 +330,8 @@ callback — escapes the rules on purpose, because how often it runs is no longe
 captures state.)
 
 **Each rule covers one family of allocation.** OPL001 matches `new` expressions and
-`UnityEngine.Object.Instantiate`. OPL002 matches string concatenation and interpolation, capturing
-lambdas, method-group delegates, implicit `params` arrays, LINQ and boxing, and is Info by default, so
+`UnityEngine.Object.Instantiate`. OPL002 matches string concatenation and interpolation,
+`string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ and boxing, and is Info by default, so
 the Unity Console does not show it until it is raised to a warning. OPL003 matches `UnityEngine`
 members that return an array, plus `name` and `tag`. Still not reported by any rule:
 

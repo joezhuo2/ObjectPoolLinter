@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.4.0] - 2026-09-16
+
+### Added
+- OPL002 reports explicit string building in hot paths:
+  - `string.Concat(...)`, every overload (two or more strings or objects, the `params` form, and
+    `IEnumerable<string>`), as `string.Concat()`;
+  - `string.Format(...)`, every overload including those taking an `IFormatProvider`, as
+    `string.Format()`;
+  - `StringBuilder.ToString()` and `StringBuilder.ToString(int, int)`, as `StringBuilder.ToString()`.
+    Reusing a `StringBuilder` avoids intermediate strings, but each `ToString()` still allocates the
+    result.
+- The implicit `params` array built for a `string.Concat` or `string.Format` call, and the boxing of
+  value-type arguments passed to one, are part of the call's allocation and are not reported again.
+  `a + b`, which compiles to `string.Concat`, is still reported once as `string concatenation`.
+- 5 tests, for 139 in total.
+
+### Changed
+- The OPL002 descriptor description, [docs/rules/OPL002.md](docs/rules/OPL002.md), the README and the
+  Unity package README list the new constructs.
+
 ## [v1.3.0] - 2026-09-13
 
 ### Added
@@ -565,7 +585,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.4.0...HEAD
+[v1.4.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.0.0...v1.1.0

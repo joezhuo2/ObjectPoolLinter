@@ -20,7 +20,7 @@ namespace ObjectPoolLinter
         private const string Category = "Performance";
         private static readonly LocalizableString Title = "Hidden allocation in hot path";
         private static readonly LocalizableString MessageFormat = "'{0}' allocates inside the frequently-called method '{1}'. Move it out of the method or cache the result.";
-        private static readonly LocalizableString Description = "String concatenation and interpolation, capturing lambdas, method-group delegates, implicit params arrays, LINQ and boxing all allocate without a 'new' in the source. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
+        private static readonly LocalizableString Description = "String concatenation and interpolation, string.Concat, string.Format, StringBuilder.ToString, capturing lambdas, method-group delegates, implicit params arrays, LINQ and boxing all allocate without a 'new' in the source. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
 
         internal const string HelpLinkUri = "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/docs/rules/OPL002.md";
 
@@ -56,7 +56,10 @@ namespace ObjectPoolLinter
             var hotPaths = HotPathDetector.Create(context.Compilation);
             if (hotPaths == null) return;
 
-            var analyzer = new CompilationAnalyzer(hotPaths, context.Compilation.GetTypeByMetadataName("System.Linq.Enumerable"));
+            var analyzer = new CompilationAnalyzer(
+                hotPaths,
+                context.Compilation.GetTypeByMetadataName("System.Linq.Enumerable"),
+                context.Compilation.GetTypeByMetadataName("System.Text.StringBuilder"));
 
             context.RegisterOperationAction(analyzer.AnalyzeBinary, OperationKind.Binary);
             context.RegisterOperationAction(analyzer.AnalyzeCompoundAssignment, OperationKind.CompoundAssignment);
@@ -72,11 +75,13 @@ namespace ObjectPoolLinter
         {
             private readonly HotPathDetector _hotPaths;
             private readonly INamedTypeSymbol? _enumerable;
+            private readonly INamedTypeSymbol? _stringBuilder;
 
-            internal CompilationAnalyzer(HotPathDetector hotPaths, INamedTypeSymbol? enumerable)
+            internal CompilationAnalyzer(HotPathDetector hotPaths, INamedTypeSymbol? enumerable, INamedTypeSymbol? stringBuilder)
             {
                 _hotPaths = hotPaths;
                 _enumerable = enumerable;
+                _stringBuilder = stringBuilder;
             }
 
             // `a + b` on strings. Only the outermost `+` of a chain is reported, since `a + b + c`
@@ -152,6 +157,10 @@ namespace ObjectPoolLinter
                 };
                 if (calleeName == null || array.Type == null) return;
 
+                // `string.Format("{0} {1} {2} {3}", a, b, c, d)`: the array is part of the formatting
+                // call already reported.
+                if (argument.Parent is IInvocationOperation stringCall && IsStringFormattingCall(stringCall.TargetMethod)) return;
+
                 var arrayType = array.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
                 Report(context, argument.Parent!.Syntax, "params " + arrayType + " for " + calleeName + "()");
             }
@@ -165,6 +174,15 @@ namespace ObjectPoolLinter
                 {
                     if (IsReceiverOfLinqCall(invocation)) return;
                     Report(context, invocation.Syntax, "LINQ " + DescribeLinqChain(invocation));
+                    return;
+                }
+
+                // Explicit string building. `a + b` compiles to string.Concat too, but that call is not in
+                // the operation tree, so it is reported once, by AnalyzeBinary.
+                var stringCall = DescribeStringCall(invocation.TargetMethod);
+                if (stringCall != null)
+                {
+                    Report(context, invocation.Syntax, stringCall);
                     return;
                 }
 
@@ -189,7 +207,8 @@ namespace ObjectPoolLinter
 
             // Boxing of an existing value: `object o = count;`, `Debug.Log(count)`. A struct boxed as it
             // is created is OPL001's; boxing inside a concatenation or an interpolation hole is part of
-            // the string allocation already reported.
+            // the string allocation already reported, and so is boxing an argument to string.Concat or
+            // string.Format.
             internal void AnalyzeConversion(OperationAnalysisContext context)
             {
                 var conversion = (IConversionOperation)context.Operation;
@@ -204,6 +223,7 @@ namespace ObjectPoolLinter
                 if (conversion.Parent is IBinaryOperation parent && IsStringConcatenation(parent)) return;
                 if (conversion.Parent is ICompoundAssignmentOperation { OperatorKind: BinaryOperatorKind.Add } compound &&
                     compound.Type?.SpecialType == SpecialType.System_String) return;
+                if (IsArgumentToStringFormattingCall(conversion)) return;
 
                 Report(context, conversion.Syntax, "boxing " + Display(operand.Type) + " to " + Display(conversion.Type));
             }
@@ -282,6 +302,38 @@ namespace ObjectPoolLinter
                 }
 
                 return names;
+            }
+
+            // "string.Concat()", "string.Format()" or "StringBuilder.ToString()" when the method is one of
+            // those; null otherwise.
+            private string? DescribeStringCall(IMethodSymbol method)
+            {
+                if (IsStringFormattingCall(method)) return "string." + method.Name + "()";
+
+                if (method.Name == "ToString" && _stringBuilder != null &&
+                    SymbolEqualityComparer.Default.Equals(method.ContainingType, _stringBuilder))
+                    return "StringBuilder.ToString()";
+
+                return null;
+            }
+
+            private static bool IsStringFormattingCall(IMethodSymbol method)
+            {
+                return method.IsStatic
+                    && method.ContainingType?.SpecialType == SpecialType.System_String
+                    && method.Name is "Concat" or "Format";
+            }
+
+            // The value is passed to string.Concat or string.Format, directly or as an element of the
+            // params array the compiler builds for the call.
+            private static bool IsArgumentToStringFormattingCall(IOperation operation)
+            {
+                var parent = operation.Parent;
+                if (parent is IArrayInitializerOperation { Parent: IArrayCreationOperation { IsImplicit: true } array })
+                    parent = array.Parent;
+
+                return parent is IArgumentOperation { Parent: IInvocationOperation invocation }
+                    && IsStringFormattingCall(invocation.TargetMethod);
             }
 
             private static bool IsStringConcatenation(IBinaryOperation binary)

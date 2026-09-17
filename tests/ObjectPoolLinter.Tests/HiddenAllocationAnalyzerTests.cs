@@ -129,6 +129,133 @@ public class Hud : MonoBehaviour
         }
 
         [Fact]
+        public async Task StringConcatCall_ReportsEveryOverload()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    string a = ""a"", b = ""b"", c = ""c"", d = ""d"", e = ""e"";
+    string[] parts = { ""a"", ""b"" };
+
+    void Update()
+    {
+        var two = {|#0:string.Concat(a, b)|};
+        var three = {|#1:string.Concat(a, b, c)|};
+        var five = {|#2:string.Concat(a, b, c, d, e)|};
+        var joined = {|#3:string.Concat(parts)|};
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("string.Concat()"),
+                Diagnostic("string.Concat()", location: 1),
+                Diagnostic("string.Concat()", location: 2),
+                Diagnostic("string.Concat()", location: 3));
+        }
+
+        [Fact]
+        public async Task StringConcatCall_DoesNotAlsoReportBoxingOrParamsArray()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    int hp, mp, xp, lvl, gold;
+
+    void Update()
+    {
+        var text = {|#0:string.Concat(hp, mp, xp, lvl, gold)|};
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("string.Concat()"));
+        }
+
+        [Fact]
+        public async Task StringFormat_Reports_WithoutBoxingOrParamsArray()
+        {
+            var source = @"
+using System.Globalization;
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    int hp, mp, xp, lvl;
+
+    void Update()
+    {
+        var one = {|#0:string.Format(""hp: {0}"", hp)|};
+        var four = {|#1:string.Format(""{0} {1} {2} {3}"", hp, mp, xp, lvl)|};
+        var invariant = {|#2:string.Format(CultureInfo.InvariantCulture, ""{0}"", hp)|};
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("string.Format()"),
+                Diagnostic("string.Format()", location: 1),
+                Diagnostic("string.Format()", location: 2));
+        }
+
+        [Fact]
+        public async Task StringBuilderToString_Reports()
+        {
+            var source = @"
+using System.Text;
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    readonly StringBuilder builder = new StringBuilder();
+
+    void Update()
+    {
+        builder.Clear();
+        builder.Append(""hp"");
+        var text = {|#0:builder.ToString()|};
+        var slice = {|#1:builder.ToString(0, 1)|};
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("StringBuilder.ToString()"),
+                Diagnostic("StringBuilder.ToString()", location: 1));
+        }
+
+        [Fact]
+        public async Task StringCallsInColdPath_DoNotReport()
+        {
+            var source = @"
+using System.Text;
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    readonly StringBuilder builder = new StringBuilder();
+    int hp;
+
+    void Start()
+    {
+        var a = string.Concat(""a"", ""b"", ""c"");
+        var b = string.Format(""{0}"", hp);
+        var c = builder.ToString();
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        [Fact]
         public async Task LambdaCapturingLocal_Reports()
         {
             var source = @"
