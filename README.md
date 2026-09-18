@@ -6,7 +6,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 ## Features
 
-- **Three rules for Unity hot paths**:
+- **Three rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md), which warns about misspelled or invalid `object_pool_linter.*` options:
 
   | Rule | Reports | Default |
   | --- | --- | --- |
@@ -15,7 +15,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
   | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`) and `name` / `tag` | Warning |
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
-- **Configurable**: add your own hot methods (`Tick`, `OnPreCull`, custom update loops) or exclude types from `.editorconfig` - see [Configuration](#configuration)
+- **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
 - **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
@@ -178,21 +178,34 @@ that a method allocates nothing.
 
 ### Configuration
 
-The 18 built-in Unity messages can be extended, and types excluded, from `.editorconfig`. The options
-apply to all three rules:
+Settings go in a `.editorconfig` at the project root (next to `Assets/` in Unity). Every line is
+optional:
 
 ```ini
-[*.cs]
-# Also treat these methods as hot paths: any type, any signature. Type.Method limits one to a type.
-object_pool_linter.additional_hot_methods = Tick, Simulate, OnPreCull, EnemyBrain.Think
+root = true
 
-# Never report inside methods declared on these types (simple or namespace-qualified names).
+[*.cs]
+# Also treat these methods as hot paths. Type.Method limits one to a type; a parameter list to one overload.
+object_pool_linter.additional_hot_methods = Tick(float), Simulate, OnPreCull, EnemyBrain.Think()
+
+# Never report inside methods declared on these types: names, or a regex over the qualified name.
 object_pool_linter.excluded_types = LoadingScreen, Game.Editor.GizmoDrawer
+object_pool_linter.excluded_types_regex = ^Game\.Debug\.
+
+# OPL002 severity per kind of allocation: string, delegate, params, linq, boxing.
+object_pool_linter.linq_severity = warning
+object_pool_linter.boxing_severity = warning
+object_pool_linter.params_severity = none
 ```
 
-Names are case-sensitive, and an exclusion does not extend to derived types. The matching rules, and
-the caveat that Unity's own editor compile has not been verified to pass these options through, are
-in [docs/rules/OPL001.md](docs/rules/OPL001.md#configuration).
+The hot-method and exclusion options apply to all three rules; the `*_severity` options to OPL002
+only, and only while `dotnet_diagnostic.OPL002.severity` is not set. Names are case-sensitive, and an
+exclusion does not extend to derived types. A misspelled option or an unusable value is reported as
+[OPL004](docs/rules/OPL004.md) rather than silently ignored.
+
+Step-by-step setup, every option, how nested `.editorconfig` files combine, and the caveat that
+Unity's own editor compile has not been verified to pass these options through are in
+[docs/configuration.md](docs/configuration.md).
 
 ### Code Fixes
 

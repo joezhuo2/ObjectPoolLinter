@@ -41,6 +41,11 @@ namespace ObjectPoolLinter
         // member does not exist in the Roslyn 3.8 the analyzer builds against.
         private const LanguageVersion CSharp11 = (LanguageVersion)1100;
 
+        // Diagnostic property naming the kind of allocation: string, delegate, params, linq or boxing.
+        internal const string AllocationKindProperty = "AllocationKind";
+
+        private static readonly string[] KindNames = { "string", "delegate", "params", "linq", "boxing" };
+
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
         public override void Initialize(AnalysisContext context)
@@ -92,7 +97,7 @@ namespace ObjectPoolLinter
                 if (!IsStringConcatenation(binary) || binary.ConstantValue.HasValue) return;
                 if (binary.Parent is IBinaryOperation parent && IsStringConcatenation(parent)) return;
 
-                Report(context, binary.Syntax, "string concatenation");
+                Report(context, binary.Syntax, AllocationKind.String, "string concatenation");
             }
 
             internal void AnalyzeCompoundAssignment(OperationAnalysisContext context)
@@ -101,7 +106,7 @@ namespace ObjectPoolLinter
                 if (assignment.OperatorKind != BinaryOperatorKind.Add) return;
                 if (assignment.Type?.SpecialType != SpecialType.System_String) return;
 
-                Report(context, assignment.Syntax, "string concatenation");
+                Report(context, assignment.Syntax, AllocationKind.String, "string concatenation");
             }
 
             internal void AnalyzeInterpolatedString(OperationAnalysisContext context)
@@ -110,7 +115,7 @@ namespace ObjectPoolLinter
                 if (interpolated.ConstantValue.HasValue) return;
                 if (!interpolated.Parts.Any(part => part is IInterpolationOperation)) return;
 
-                Report(context, interpolated.Syntax, "string interpolation");
+                Report(context, interpolated.Syntax, AllocationKind.String, "string interpolation");
             }
 
             // A lambda that captures nothing is cached in a static field by the compiler and allocates
@@ -129,14 +134,14 @@ namespace ObjectPoolLinter
                     case IAnonymousFunctionOperation lambda:
                         var captures = GetCapturedNames(lambda);
                         if (captures.Count == 0) return;
-                        Report(context, lambda.Syntax, "lambda capturing " + string.Join(", ", captures));
+                        Report(context, lambda.Syntax, AllocationKind.Delegate, "lambda capturing " + string.Join(", ", captures));
                         break;
 
                     case IMethodReferenceOperation methodReference:
                         var method = methodReference.Method;
                         if (method.IsStatic && creation.Syntax.SyntaxTree.Options is CSharpParseOptions { LanguageVersion: >= CSharp11 })
                             return;
-                        Report(context, methodReference.Syntax, "delegate for " + method.Name + "()");
+                        Report(context, methodReference.Syntax, AllocationKind.Delegate, "delegate for " + method.Name + "()");
                         break;
                 }
             }
@@ -162,7 +167,7 @@ namespace ObjectPoolLinter
                 if (argument.Parent is IInvocationOperation stringCall && IsStringFormattingCall(stringCall.TargetMethod)) return;
 
                 var arrayType = array.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-                Report(context, argument.Parent!.Syntax, "params " + arrayType + " for " + calleeName + "()");
+                Report(context, argument.Parent!.Syntax, AllocationKind.Params, "params " + arrayType + " for " + calleeName + "()");
             }
 
             internal void AnalyzeInvocation(OperationAnalysisContext context)
@@ -173,7 +178,7 @@ namespace ObjectPoolLinter
                 if (IsLinqCall(invocation))
                 {
                     if (IsReceiverOfLinqCall(invocation)) return;
-                    Report(context, invocation.Syntax, "LINQ " + DescribeLinqChain(invocation));
+                    Report(context, invocation.Syntax, AllocationKind.Linq, "LINQ " + DescribeLinqChain(invocation));
                     return;
                 }
 
@@ -182,7 +187,7 @@ namespace ObjectPoolLinter
                 var stringCall = DescribeStringCall(invocation.TargetMethod);
                 if (stringCall != null)
                 {
-                    Report(context, invocation.Syntax, stringCall);
+                    Report(context, invocation.Syntax, AllocationKind.String, stringCall);
                     return;
                 }
 
@@ -194,7 +199,7 @@ namespace ObjectPoolLinter
 
                 var declaringType = method.ContainingType?.SpecialType;
                 if (declaringType is SpecialType.System_Object or SpecialType.System_ValueType or SpecialType.System_Enum)
-                    Report(context, invocation.Syntax, "boxing " + Display(receiverType) + " for " + method.Name + "()");
+                    Report(context, invocation.Syntax, AllocationKind.Boxing, "boxing " + Display(receiverType) + " for " + method.Name + "()");
             }
 
             internal void AnalyzeTranslatedQuery(OperationAnalysisContext context)
@@ -202,7 +207,7 @@ namespace ObjectPoolLinter
                 var query = (ITranslatedQueryOperation)context.Operation;
                 if (IsReceiverOfLinqCall(query)) return;
 
-                Report(context, query.Syntax, "LINQ query");
+                Report(context, query.Syntax, AllocationKind.Linq, "LINQ query");
             }
 
             // Boxing of an existing value: `object o = count;`, `Debug.Log(count)`. A struct boxed as it
@@ -225,7 +230,7 @@ namespace ObjectPoolLinter
                     compound.Type?.SpecialType == SpecialType.System_String) return;
                 if (IsArgumentToStringFormattingCall(conversion)) return;
 
-                Report(context, conversion.Syntax, "boxing " + Display(operand.Type) + " to " + Display(conversion.Type));
+                Report(context, conversion.Syntax, AllocationKind.Boxing, "boxing " + Display(operand.Type) + " to " + Display(conversion.Type));
             }
 
             private bool IsLinqCall(IInvocationOperation invocation)
@@ -344,15 +349,32 @@ namespace ObjectPoolLinter
 
             private static string Display(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
 
-            private void Report(OperationAnalysisContext context, SyntaxNode node, string allocation)
+            // The kind's own severity from .editorconfig (`object_pool_linter.linq_severity = warning`)
+            // replaces the rule's Info. `dotnet_diagnostic.OPL002.severity`, when set, is applied by the
+            // compiler afterwards and wins, except that a kind set to `none` is never reported.
+            private void Report(OperationAnalysisContext context, SyntaxNode node, AllocationKind kind, string allocation)
             {
                 var semanticModel = context.Operation.SemanticModel;
                 if (semanticModel == null) return;
 
+                var severity = _hotPaths.GetOptions(node.SyntaxTree, context.Options).GetSeverity(kind);
+                if (severity == ReportDiagnostic.Suppress) return;
+
                 if (!_hotPaths.TryGetHotPathMethod(node, semanticModel, context.Options, context.CancellationToken, out var methodName))
                     return;
 
-                context.ReportDiagnostic(Diagnostic.Create(Rule, node.GetLocation(), allocation, methodName));
+                var properties = ImmutableDictionary<string, string?>.Empty.Add(AllocationKindProperty, KindNames[(int)kind]);
+                var effectiveSeverity = severity switch
+                {
+                    ReportDiagnostic.Error => DiagnosticSeverity.Error,
+                    ReportDiagnostic.Warn => DiagnosticSeverity.Warning,
+                    ReportDiagnostic.Info => DiagnosticSeverity.Info,
+                    ReportDiagnostic.Hidden => DiagnosticSeverity.Hidden,
+                    _ => Rule.DefaultSeverity,
+                };
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Rule, node.GetLocation(), effectiveSeverity, additionalLocations: null, properties, allocation, methodName));
             }
         }
     }

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -16,10 +17,6 @@ namespace ObjectPoolLinter
     internal sealed class HotPathDetector
     {
         internal const string MonoBehaviourMetadataName = "UnityEngine.MonoBehaviour";
-
-        // .editorconfig keys. Both take a comma-separated list; see docs/rules/OPL001.md#configuration.
-        internal const string AdditionalHotMethodsOption = "object_pool_linter.additional_hot_methods";
-        internal const string ExcludedTypesOption = "object_pool_linter.excluded_types";
 
         private const string NoParameters = "";
 
@@ -47,7 +44,8 @@ namespace ObjectPoolLinter
             }.ToImmutableDictionary(System.StringComparer.Ordinal);
 
         private readonly INamedTypeSymbol _monoBehaviour;
-        private readonly ConcurrentDictionary<SyntaxTree, HotPathOptions> _optionsByTree = new();
+        private readonly ConcurrentDictionary<SyntaxTree, LinterOptions> _optionsByTree = new();
+        private readonly ConcurrentDictionary<string, Regex?> _regexCache = new(System.StringComparer.Ordinal);
 
         private HotPathDetector(INamedTypeSymbol monoBehaviour)
         {
@@ -97,11 +95,11 @@ namespace ObjectPoolLinter
         }
 
         // .editorconfig options can differ per file, so they are read per syntax tree and parsed once.
-        private HotPathOptions GetOptions(SyntaxTree tree, AnalyzerOptions analyzerOptions)
+        internal LinterOptions GetOptions(SyntaxTree tree, AnalyzerOptions analyzerOptions)
         {
             return _optionsByTree.GetOrAdd(
                 tree,
-                t => HotPathOptions.Parse(analyzerOptions.AnalyzerConfigOptionsProvider.GetOptions(t)));
+                t => LinterOptions.Parse(analyzerOptions.AnalyzerConfigOptionsProvider.GetOptions(t), _regexCache));
         }
 
         private bool IsUnityMessage(IMethodSymbol methodSymbol)
@@ -203,97 +201,6 @@ namespace ObjectPoolLinter
                 return parameter.Type.SpecialType == SpecialType.System_Int32;
 
             return parameter.Type.ToDisplayString().Equals(expectedParameterType, System.StringComparison.Ordinal);
-        }
-
-        // User configuration from .editorconfig. Every name is matched ordinally, so `tick` does not
-        // match `Tick`. A type name is its simple name (`Enemy`) or its namespace-qualified name with
-        // nested types separated by dots (`Game.AI.Enemy.Brain`); generic type parameters are left out.
-        private sealed class HotPathOptions
-        {
-            private static readonly HotPathOptions Empty = new(ImmutableArray<string>.Empty, ImmutableArray<string>.Empty);
-
-            private static readonly char[] Separators = { ',' };
-
-            // Entries are either a bare method name (`Tick`) or a type-qualified one (`Enemy.Tick`).
-            private readonly ImmutableArray<string> _additionalHotMethods;
-            private readonly ImmutableArray<string> _excludedTypes;
-
-            private HotPathOptions(ImmutableArray<string> additionalHotMethods, ImmutableArray<string> excludedTypes)
-            {
-                _additionalHotMethods = additionalHotMethods;
-                _excludedTypes = excludedTypes;
-            }
-
-            internal static HotPathOptions Parse(AnalyzerConfigOptions options)
-            {
-                var additionalHotMethods = ParseList(options, AdditionalHotMethodsOption);
-                var excludedTypes = ParseList(options, ExcludedTypesOption);
-
-                if (additionalHotMethods.IsEmpty && excludedTypes.IsEmpty) return Empty;
-                return new HotPathOptions(additionalHotMethods, excludedTypes);
-            }
-
-            internal bool IsExcludedType(INamedTypeSymbol type)
-            {
-                foreach (var entry in _excludedTypes)
-                {
-                    if (TypeNameMatches(type, entry)) return true;
-                }
-
-                return false;
-            }
-
-            // Any signature, static or instance, on any type: a custom update loop is often a plain
-            // class driven by a manager, and its tick method usually takes a delta time.
-            internal bool IsAdditionalHotMethod(IMethodSymbol method)
-            {
-                foreach (var entry in _additionalHotMethods)
-                {
-                    var lastDot = entry.LastIndexOf('.');
-                    var methodName = lastDot < 0 ? entry : entry.Substring(lastDot + 1);
-                    if (!method.Name.Equals(methodName, System.StringComparison.Ordinal)) continue;
-
-                    if (lastDot < 0 || TypeNameMatches(method.ContainingType, entry.Substring(0, lastDot))) return true;
-                }
-
-                return false;
-            }
-
-            private static ImmutableArray<string> ParseList(AnalyzerConfigOptions options, string key)
-            {
-                if (!options.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
-                    return ImmutableArray<string>.Empty;
-
-                var builder = ImmutableArray.CreateBuilder<string>();
-                foreach (var part in value.Split(Separators))
-                {
-                    var trimmed = part.Trim();
-                    if (trimmed.StartsWith("global::", System.StringComparison.Ordinal))
-                        trimmed = trimmed.Substring("global::".Length);
-
-                    if (trimmed.Length > 0) builder.Add(trimmed);
-                }
-
-                return builder.ToImmutable();
-            }
-
-            private static bool TypeNameMatches(INamedTypeSymbol type, string name)
-            {
-                if (type.Name.Equals(name, System.StringComparison.Ordinal)) return true;
-                if (name.IndexOf('.') < 0) return false;
-
-                return GetQualifiedName(type).Equals(name, System.StringComparison.Ordinal);
-            }
-
-            private static string GetQualifiedName(INamedTypeSymbol type)
-            {
-                var name = type.Name;
-                for (var containing = type.ContainingType; containing != null; containing = containing.ContainingType)
-                    name = containing.Name + "." + name;
-
-                var ns = type.ContainingNamespace;
-                return ns == null || ns.IsGlobalNamespace ? name : ns.ToDisplayString() + "." + name;
-            }
         }
     }
 }

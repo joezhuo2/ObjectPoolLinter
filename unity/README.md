@@ -29,16 +29,19 @@ ignores it; Unity's compile pipeline never loads `Microsoft.CodeAnalysis.CSharp.
 
 ## Configuring hot methods
 
-List extra hot methods or excluded types in `.editorconfig`. The options apply to all three rules:
+List extra hot methods or excluded types in a `.editorconfig` at your project root, next to
+`Assets/`. The options apply to all three rules:
 
 ```ini
 [*.cs]
-object_pool_linter.additional_hot_methods = Tick, OnPreCull
+object_pool_linter.additional_hot_methods = Tick(float), OnPreCull
 object_pool_linter.excluded_types = LoadingScreen
+object_pool_linter.excluded_types_regex = ^Game\.Debug\.
 ```
 
 IDEs honour these options. Unity's own editor compile has not been verified to pass them to
-analyzers. Details: `docs/rules/OPL001.md#configuration` in the repository.
+analyzers. A misspelled option is reported as OPL004. Details: `docs/configuration.md` in the
+repository.
 
 ## Changing a rule's severity
 
@@ -50,6 +53,15 @@ around a specific allocation:
 [*.cs]
 dotnet_diagnostic.OPL001.severity = none      # turn OPL001 off
 dotnet_diagnostic.OPL002.severity = warning   # show OPL002 in the Console
+```
+
+Or raise only some kinds of OPL002 (leave `dotnet_diagnostic.OPL002.severity` unset for these to
+apply):
+
+```ini
+[*.cs]
+object_pool_linter.linq_severity = warning
+object_pool_linter.boxing_severity = warning
 ```
 
 Documentation and issues: https://github.com/joezhuo2/ObjectPoolLinter

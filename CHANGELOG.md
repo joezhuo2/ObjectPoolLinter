@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.5.2] - 2026-09-18
+
+### Added
+- **Parameter lists in `object_pool_linter.additional_hot_methods`.** `Tick(float)`,
+  `EnemyBrain.Think()` and `Step(ref Vector3, float)` match only the overload with exactly those
+  parameters. Types can be written as C# keywords (`float`), simple names (`Vector3`, `Single`) or
+  namespace-qualified names (`UnityEngine.Vector3`, `System.Single`); `ref`, `out` and `in` must match,
+  and `params` is ignored. Commas inside parentheses and angle brackets no longer split the list, so
+  `Apply(Dictionary<int, string>, float)` is one entry. Entries without parentheses keep matching any
+  parameter list.
+- **`object_pool_linter.excluded_types_regex`.** One .NET regular expression, matched case-sensitively
+  and unanchored against each type's namespace-qualified name (`Game.Debug.Overlay`), so
+  `^Game\.Debug\.` excludes a namespace. Compiled once per project, with a 250 ms match timeout. Works
+  alongside `excluded_types`.
+- **Per-kind severity for OPL002.** `object_pool_linter.string_severity`, `delegate_severity`,
+  `params_severity`, `linq_severity` and `boxing_severity` take `none`, `silent`, `suggestion`,
+  `warning`, `error` or `default`. Each OPL002 diagnostic also carries its kind in the `AllocationKind`
+  property. `dotnet_diagnostic.OPL002.severity`, when set, still wins, except that a kind set to `none`
+  is never reported.
+- **OPL004: Invalid ObjectPoolLinter option** (Configuration, Warning). Reports an
+  `object_pool_linter.*` option whose name is not recognized, suggesting the closest known one
+  (`'object_pool_linter.exlude_types' ... Did you mean 'object_pool_linter.excluded_types'?`), and one
+  whose value cannot be used: a malformed hot-method entry, an unknown severity, an invalid regex.
+  Reported once per project with no source location. See [docs/rules/OPL004.md](docs/rules/OPL004.md).
+- [docs/configuration.md](docs/configuration.md): a setup guide covering where the `.editorconfig`
+  goes, every option, per-kind severities, OPL004, and how nested and global config files combine.
+- 22 tests, for 193 in total.
+
+### Changed
+- Options parsing moved out of `HotPathDetector` into a new `LinterOptions` class, shared by OPL002's
+  severity lookup and OPL004. No behaviour change for existing options.
+- The README, the Unity package README and the Configuration sections of
+  [OPL001](docs/rules/OPL001.md#configuration) and [OPL002](docs/rules/OPL002.md#per-kind-severity)
+  describe the new options and link to the configuration guide.
+
+### Notes
+- Finding misspelled option *names* needs a compiler that can list its options
+  (`AnalyzerConfigOptions.Keys`). The analyzer builds against Roslyn 3.8, which cannot, so it looks the
+  property up at run time; the .NET 10 SDK provides it. Elsewhere invalid values are still reported.
+- OPL004 is a compilation-end diagnostic: IDEs show it only with full-solution analysis on.
+
 ## [v1.5.1] - 2026-09-17
 
 ### Added
@@ -661,7 +702,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.2...HEAD
+[v1.5.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.1...v1.5.2
 [v1.5.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.0...v1.5.1
 [v1.5.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.4.0...v1.5.0
 [v1.4.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.3.0...v1.4.0
