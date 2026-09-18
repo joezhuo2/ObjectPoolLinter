@@ -9,10 +9,10 @@
 
   <PropertyGroup>
     <PackageId>ObjectPoolLinter</PackageId>
-    <Version>1.5.0</Version>
+    <Version>1.5.1</Version>
     <Authors>Joe Zhuo</Authors>
     <Copyright>Copyright (c) 2026 Joe Zhuo</Copyright>
-    <Description>Roslyn analyzer for Unity C# that flags allocations in hot paths - new objects, hidden allocations such as strings, closures, LINQ and boxing, and allocating Unity APIs - and offers code fixes that route object allocations through an object pool and rewrite closures, delegates, string interpolation and simple LINQ chains into cached or reused forms, minimizing GC and frame hitches.</Description>
+    <Description>Roslyn analyzer for Unity C# that flags allocations in hot paths - new objects, hidden allocations such as strings, closures, LINQ and boxing, and allocating Unity APIs - and offers code fixes that route object allocations through an object pool and rewrite closures, delegates, string interpolation, simple LINQ chains, tag comparisons, GetComponents calls and Input.touches into cached, reused or non-allocating forms, minimizing GC and frame hitches.</Description>
     <PackageTags>roslyn;analyzer;analyzers;unity;performance;allocation;object-pool;gc;codefix</PackageTags>
     <PackageProjectUrl>https://github.com/joezhuo2/ObjectPoolLinter</PackageProjectUrl>
     <RepositoryUrl>https://github.com/joezhuo2/ObjectPoolLinter.git</RepositoryUrl>

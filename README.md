@@ -16,7 +16,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `OnPreCull`, custom update loops) or exclude types from `.editorconfig` - see [Configuration](#configuration)
-- **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list
+- **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
 
 What the rules deliberately do not cover — call-graph analysis, allocations the analyzer cannot see
@@ -196,9 +196,8 @@ in [docs/rules/OPL001.md](docs/rules/OPL001.md#configuration).
 
 ### Code Fixes
 
-When an OPL001 diagnostic is reported, you can apply one of these quick fixes (OPL003 has none; its
-page lists the manual fix for each API, and OPL002's fixes are described
-[below](#opl002-code-fixes)):
+When an OPL001 diagnostic is reported, you can apply one of these quick fixes (the OPL002 and OPL003
+fixes are described [below](#opl002-code-fixes)):
 
 1. **Replace with object pool Get()** - Replaces `new Type(args)` with `TypePool.Get(args)`
 2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling (array allocations get
@@ -240,6 +239,23 @@ method; they add `Awake()` when the class has none. The `StringBuilder` fix stil
 per run, the final `ToString()`, which OPL002 keeps reporting. The LINQ fix hands back the same list on
 every run, so code that keeps the result past the current frame has to copy it. None of the four has
 fix-all support.
+
+### OPL003 code fixes
+
+OPL003 offers a rewrite for three APIs. As with OPL002, each is offered only for the shapes it can
+rewrite without changing what the code does, and
+[docs/rules/OPL003.md](docs/rules/OPL003.md#code-fixes) lists exactly which shapes qualify. The other
+APIs keep the manual fixes listed on that page.
+
+| Reported as | Fix | Result |
+| --- | --- | --- |
+| `Component.tag`, `GameObject.tag` | **Use CompareTag()** | `other.tag == "Player"` becomes `other.CompareTag("Player")`; `!=` becomes `!other.CompareTag("Player")` |
+| `Component.GetComponents`, `GetComponentsInChildren`, `GetComponentsInParent` | **Fill a reused List&lt;T&gt; with the non-allocating overload** | `var colliders = GetComponentsInChildren<Collider>();` becomes `GetComponentsInChildren<Collider>(_collidersBuffer);` then `var colliders = _collidersBuffer;`, and `colliders.Length` becomes `colliders.Count` |
+| `Input.touches` | **Use Input.touchCount and Input.GetTouch()** | `foreach (var touch in Input.touches)` becomes a `for` loop over `Input.touchCount` starting with `var touch = Input.GetTouch(i);`; `.Length` and `[i]` become `Input.touchCount` and `Input.GetTouch(i)` |
+
+`CompareTag` logs an error for a tag missing from the Tag Manager, where `==` returned `false`. The
+buffer fix hands back the same list on every run, so code that keeps it past the frame has to copy it.
+None of the three has fix-all support.
 
 ## The pool contract
 

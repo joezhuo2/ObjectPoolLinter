@@ -11,7 +11,9 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
   `Awake()`, build interpolated strings with a reused `StringBuilder`, and turn simple LINQ chains into
   a loop.
 - **OPL003** (warning): Unity APIs that return a new array, such as `GetComponentsInChildren<T>()`,
-  `Physics.RaycastAll` and `Camera.allCameras`, plus `name` and `tag`.
+  `Physics.RaycastAll` and `Camera.allCameras`, plus `name` and `tag`, with code fixes that turn
+  `tag ==` into `CompareTag()`, fill a reused list with `GetComponents*<T>(List<T>)`, and read
+  `Input.touches` through `Input.touchCount` and `Input.GetTouch(i)`.
 
 ## Scope
 

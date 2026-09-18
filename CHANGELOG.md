@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.5.1] - 2026-09-17
+
+### Added
+- Code fixes for OPL003, in a new `UnityApiAllocationCodeFixProvider`. As with OPL002, each is offered
+  only for the shapes it can rewrite without changing behaviour; the others are still reported, with
+  no fix.
+  - **Use CompareTag()**: `other.tag == "Player"` becomes `other.CompareTag("Player")`, and `!=` becomes
+    `!other.CompareTag("Player")`, for `Component.tag` and `GameObject.tag`. Not offered when the other
+    side is `null` or not a `string`, or when the string is on the left and both sides have side
+    effects, since the call would evaluate them in the other order.
+  - **Fill a reused List&lt;T&gt; with the non-allocating overload**:
+    `var colliders = GetComponentsInChildren<Collider>();` becomes
+    `GetComponentsInChildren<Collider>(_collidersBuffer);` then `var colliders = _collidersBuffer;`, with
+    a `readonly List<T>` field and `using System.Collections.Generic;` added when missing. Uses of
+    `colliders.Length` become `colliders.Count`. Works for `GetComponents<T>`,
+    `GetComponentsInChildren<T>` and `GetComponentsInParent<T>` (which gets `false` for
+    `includeInactive`, the array overload's default), in a local declaration or as a `foreach` source.
+    Not offered when the local is used as anything but an element access, a `foreach` source or
+    `.Length`.
+  - **Use Input.touchCount and Input.GetTouch()**: `foreach (var touch in Input.touches)` becomes a
+    `for` loop over `Input.touchCount` that starts with `var touch = Input.GetTouch(i);`,
+    `Input.touches.Length` becomes `Input.touchCount`, and `Input.touches[i]` becomes
+    `Input.GetTouch(i)`. Not offered when the element is written to, or when the array is stored.
+- 17 tests, for 171 in total.
+
+### Changed
+- The syntax helpers and the `HotMethod` and `Rewrite` types shared by the code fixes moved out of
+  `HiddenAllocationCodeFixProvider` into `CodeFixSupport.cs`. No behaviour change.
+- [docs/rules/OPL003.md](docs/rules/OPL003.md) has a *Code fixes* section with before-and-after code and
+  the exact conditions for each fix. The README, the Unity package README and the NuGet description
+  mention the new fixes.
+
+### Notes
+- `CompareTag` logs an error for a tag that is not defined in the Tag Manager, where `==` quietly
+  returned `false`.
+- The buffer fix hands back the same list on every run, so a result kept past the frame must be copied.
+- None of the OPL003 fixes has fix-all support: the buffer fix picks a free field name from the
+  document as it stands, as the OPL002 fixes do.
+
 ## [v1.5.0] - 2026-09-16
 
 ### Added
@@ -622,7 +661,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.1...HEAD
+[v1.5.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.0...v1.5.1
 [v1.5.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.4.0...v1.5.0
 [v1.4.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.2.0...v1.3.0
