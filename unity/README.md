@@ -14,6 +14,34 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
   `Physics.RaycastAll` and `Camera.allCameras`, plus `name` and `tag`, with code fixes that turn
   `tag ==` into `CompareTag()`, fill a reused list with `GetComponents*<T>(List<T>)`, and read
   `Input.touches` through `Input.touchCount` and `Input.GetTouch(i)`.
+- **OPL005** (warning): a class marked `[ObjectPool]` that the source generator cannot write a pool
+  for - an abstract or static class, a `UnityEngine.Object`, or one with no reachable constructor.
+
+## Generating pools
+
+Mark a plain C# class `[ObjectPool]` and `{TypeName}Pool` is generated for you, in the shape OPL001's
+code fix rewrites allocations into:
+
+```csharp
+using ObjectPoolLinter;
+
+[ObjectPool]
+public class Bullet
+{
+    public float Speed;
+
+    public Bullet(float speed) { Speed = speed; }
+}
+
+// elsewhere
+var bullet = BulletPool.Get(12f);
+BulletPool.Return(bullet);
+```
+
+The attribute is generated too, once per assembly, so nothing else has to be imported. Resetting a
+recycled instance is yours to do, through a `Reinitialize` partial method the generator declares.
+`MonoBehaviour` and other `UnityEngine.Object` types are refused (OPL005): those are created with
+`Instantiate`, not `new`. Full guide: `docs/source-generator.md` in the repository.
 
 ## Scope
 
@@ -63,5 +91,8 @@ apply):
 object_pool_linter.linq_severity = warning
 object_pool_linter.boxing_severity = warning
 ```
+
+Installing, upgrading and pinning this package through the Package Manager, and why its asset GUIDs
+stay stable across versions: `docs/unity-package-manager.md` in the repository.
 
 Documentation and issues: https://github.com/joezhuo2/ObjectPoolLinter

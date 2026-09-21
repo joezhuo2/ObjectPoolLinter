@@ -9,11 +9,11 @@
 
   <PropertyGroup>
     <PackageId>ObjectPoolLinter</PackageId>
-    <Version>1.5.2</Version>
+    <Version>1.5.3</Version>
     <Authors>Joe Zhuo</Authors>
     <Copyright>Copyright (c) 2026 Joe Zhuo</Copyright>
-    <Description>Roslyn analyzer for Unity C# that flags allocations in hot paths - new objects, hidden allocations such as strings, closures, LINQ and boxing, and allocating Unity APIs - and offers code fixes that route object allocations through an object pool and rewrite closures, delegates, string interpolation, simple LINQ chains, tag comparisons, GetComponents calls and Input.touches into cached, reused or non-allocating forms, minimizing GC and frame hitches. Configurable from .editorconfig, with a warning for misspelled options.</Description>
-    <PackageTags>roslyn;analyzer;analyzers;unity;performance;allocation;object-pool;gc;codefix</PackageTags>
+    <Description>Roslyn analyzer for Unity C# that flags allocations in hot paths - new objects, hidden allocations such as strings, closures, LINQ and boxing, and allocating Unity APIs - and offers code fixes that route object allocations through an object pool and rewrite closures, delegates, string interpolation, simple LINQ chains, tag comparisons, GetComponents calls and Input.touches into cached, reused or non-allocating forms, minimizing GC and frame hitches. Includes a source generator that writes the pool class itself from an [ObjectPool] attribute. Configurable from .editorconfig, with a warning for misspelled options.</Description>
+    <PackageTags>roslyn;analyzer;analyzers;unity;performance;allocation;object-pool;gc;codefix;sourcegenerator</PackageTags>
     <PackageProjectUrl>https://github.com/joezhuo2/ObjectPoolLinter</PackageProjectUrl>
     <RepositoryUrl>https://github.com/joezhuo2/ObjectPoolLinter.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

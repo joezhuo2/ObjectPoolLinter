@@ -5,4 +5,4 @@
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
-OPL004 | Configuration | Warning | Reports `object_pool_linter.*` options in `.editorconfig` whose name is not recognized or whose value cannot be used.
+OPL005 | Usage | Warning | Reports a class marked `[ObjectPool]` for which the source generator cannot write a pool.

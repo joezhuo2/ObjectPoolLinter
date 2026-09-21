@@ -163,10 +163,16 @@ dotnet_diagnostic.OPL001.severity = warning      # default
 dotnet_diagnostic.OPL002.severity = warning      # default is suggestion (Info)
 dotnet_diagnostic.OPL003.severity = error
 dotnet_diagnostic.OPL004.severity = warning      # default
+dotnet_diagnostic.OPL005.severity = warning      # default
 ```
 
 `none` turns a rule off. For a single site, use `#pragma warning disable OPL001` or a
 `[SuppressMessage]` attribute; see *When to suppress* in each rule's page.
+
+[OPL005](rules/OPL005.md) comes from the `[ObjectPool]` source generator rather than an analyzer,
+but its severity is set the same way. The generator itself has no `object_pool_linter.*` options:
+everything it takes is on the attribute. See
+[Generating pools with `[ObjectPool]`](source-generator.md).
 
 ## Per-kind OPL002 severity
 

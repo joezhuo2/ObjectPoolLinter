@@ -6,7 +6,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 ## Features
 
-- **Three rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md), which warns about misspelled or invalid `object_pool_linter.*` options:
+- **Three rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md) for a misspelled or invalid `object_pool_linter.*` option and [OPL005](docs/rules/OPL005.md) for an `[ObjectPool]` attribute the generator cannot act on:
 
   | Rule | Reports | Default |
   | --- | --- | --- |
@@ -17,7 +17,8 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
 - **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
-- **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. It does not create the pool - see [The pool contract](#the-pool-contract)
+- **Writes the pool for you**: `[ObjectPool]` on a class generates `{TypeName}Pool` with one `Get()` overload per constructor, plus `Return()`, `Clear()` and partial hooks for resetting a recycled instance - see [Generating pools](docs/source-generator.md)
+- **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. The fix itself never creates that type - see [The pool contract](#the-pool-contract)
 
 What the rules deliberately do not cover — call-graph analysis, allocations the analyzer cannot see
 statically, and the allocation shapes with no replacement fix — is listed under
@@ -57,7 +58,9 @@ The files land in `Assets/Plugins/ObjectPoolLinter/`.
 
 **UPM tarball** — download it, then `Window > Package Manager > + > Install package from tarball...`.
 Keep the `.tgz` inside your project (a folder such as `Packages/tarballs/`) or somewhere every
-machine on the team can reach, because Unity records the path to the file, not a copy of it.
+machine on the team can reach, because Unity records the path to the file, not a copy of it. Where
+to put the file, how to pin and roll back a version, and why the asset GUIDs survive an upgrade are
+in [docs/unity-package-manager.md](docs/unity-package-manager.md).
 
 **Manual drop-in** — if you would rather not use either artifact, copy `ObjectPoolLinter.dll` and
 `ObjectPoolLinter.CodeFixes.dll` (from the NuGet package's `analyzers/dotnet/cs/`, or from
@@ -171,7 +174,8 @@ holding the nuget.org profile name (not the email address) that owns the policy.
 The analyzer runs automatically during build and in IDEs that support Roslyn analyzers (Visual Studio, VS Code with C# Dev Kit, Rider).
 
 Each rule is documented in its own page, which also covers how to change its severity or suppress it:
-[OPL001](docs/rules/OPL001.md), [OPL002](docs/rules/OPL002.md), [OPL003](docs/rules/OPL003.md).
+[OPL001](docs/rules/OPL001.md), [OPL002](docs/rules/OPL002.md), [OPL003](docs/rules/OPL003.md),
+[OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md).
 
 Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing.
@@ -277,6 +281,9 @@ allocation and nothing else, and it is only offered when a pool matching the con
 already in scope. When no such type exists, the fix is not offered at all and only the TODO-comment
 fix appears.
 
+Marking the allocated class `[ObjectPool]` generates a pool that satisfies this contract by
+construction; see [Generating the pool](#generating-the-pool) below.
+
 A pool satisfies the contract when all of these hold at the allocation site:
 
 | Requirement | Detail |
@@ -297,9 +304,34 @@ Two things the fix does not check:
 Target-typed `new()` is handled the same way: the pool name comes from the type the expression is
 converted to, so `Enemy e = new();` looks for `EnemyPool` just as `new Enemy()` does.
 
+### Generating the pool
+
+Rather than writing one of these by hand, mark the class:
+
+```csharp
+using ObjectPoolLinter;
+
+[ObjectPool]
+public class Enemy
+{
+    public int Hp;
+
+    public Enemy(int hp)
+    {
+        Hp = hp;
+    }
+}
+```
+
+`EnemyPool` is generated in `Enemy`'s namespace with `Get(int hp)`, `Return(Enemy)`, `Clear()` and
+`CountInactive`, which is exactly what the fix above looks for. Resetting a recycled instance stays
+yours to do, through a `Reinitialize` partial method the generator declares for each `Get` overload.
+The full walkthrough - options, generics, the reset hooks, and the types it refuses - is in
+[Generating pools with `[ObjectPool]`](docs/source-generator.md).
+
 ### A minimal pool
 
-Copy-pasteable, C# 7.3, nothing beyond `System.Collections.Generic`, so it compiles in Unity 2021.3
+Written by hand: copy-pasteable, C# 7.3, nothing beyond `System.Collections.Generic`, so it compiles in Unity 2021.3
 and later as-is. It is not thread-safe, which is enough for the main-thread Unity messages this rule
 watches.
 

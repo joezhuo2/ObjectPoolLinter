@@ -73,3 +73,35 @@ public class LoadingScreen : MonoBehaviour
         var list = new System.Collections.Generic.List<int>();
     }
 }
+
+// [ObjectPool] generates BulletPool with Get(float) and Return(Bullet) - the same shape OPL001's
+// code fix rewrites `new Bullet(speed)` into, so a hot path that goes through the pool is quiet.
+[ObjectPoolLinter.ObjectPool(InitialCapacity = 16)]
+public class Bullet
+{
+    public float Speed;
+
+    public Bullet(float speed)
+    {
+        Speed = speed;
+    }
+}
+
+// The reset hook for the generated pool lives in the consumer's own partial.
+public static partial class BulletPool
+{
+    static partial void Reinitialize(Bullet instance, float speed)
+    {
+        instance.Speed = speed;
+    }
+}
+
+public class Turret : MonoBehaviour
+{
+    void Update()
+    {
+        // No OPL001: BulletPool.Get is a call, not an allocation.
+        var bullet = BulletPool.Get(12f);
+        BulletPool.Return(bullet);
+    }
+}

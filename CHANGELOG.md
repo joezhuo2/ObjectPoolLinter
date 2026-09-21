@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.5.3] - 2026-09-21
+
+### Added
+- **`[ObjectPool]` source generator.** Marking a class `[ObjectPool]` generates
+  `{TypeName}Pool` in the class's namespace: one static `Get` overload per reachable constructor,
+  forwarding its arguments unchanged (`params`, `ref`, `in` and default values included), plus
+  `Return`, `Clear` and `CountInactive`. The generated type is exactly the shape OPL001's
+  "Replace with object pool `Get()`" fix looks for, so that fix becomes available for any marked
+  class. Generic types generate a generic pool with the same constraints, and the attribute itself is
+  generated per assembly, so nothing extra has to be referenced. The generated source stays inside
+  C# 7.3 and fully qualifies every type it names. Options: `PoolName` and `InitialCapacity`.
+- **Reset hooks.** Each pool declares `static partial void Reinitialize(...)` per `Get` overload and
+  `static partial void OnReturn(...)`, implemented in a `static partial class {TypeName}Pool` of your
+  own. Left unimplemented the calls are erased, and a recycled instance keeps the state it was
+  returned with.
+- **OPL005: No object pool can be generated for this type** (Usage, Warning). Reported by the
+  generator when `[ObjectPool]` cannot produce a pool: a static or abstract class, a type not visible
+  from its own namespace, a `UnityEngine.Object` (those need `Instantiate`, not `new`), no reachable
+  constructor, an invalid `PoolName` or negative `InitialCapacity`, a pool name already taken by a
+  non-partial type, or two types competing for one pool name. See
+  [docs/rules/OPL005.md](docs/rules/OPL005.md).
+- [docs/source-generator.md](docs/source-generator.md): the generator guide - quick start, what is
+  generated, the reset hooks, options, generics, what it refuses, and how to read the generated files.
+- [docs/unity-package-manager.md](docs/unity-package-manager.md): UPM installation - package layout,
+  installing from the tarball, the `Packages/manifest.json` entry, where to keep the `.tgz`, embedded
+  packages, upgrading and pinning, GUID stability across versions, verifying the install, and
+  troubleshooting.
+- 21 tests, for 214 in total. Each one that expects a pool compiles the generated source together
+  with code calling it.
+- `samples/SampleUnityCode` now carries an `[ObjectPool]` class, a hand-written `Reinitialize` hook
+  and a hot path that goes through the generated pool, so `build/verify-sample.ps1` covers the
+  generator end to end.
+
+### Changed
+- The README gained a Features bullet for the generator, a "Generating the pool" section under
+  [The pool contract](README.md#the-pool-contract), and links to both new guides;
+  [OPL001](docs/rules/OPL001.md#code-fixes), [docs/configuration.md](docs/configuration.md) and the
+  Unity package README point at them too.
+- `AnalyzerReleases.Shipped.md` records OPL004 under 1.5.2, where it shipped; OPL005 is unshipped.
+
+### Notes
+- Source generators need Unity 2021.3 or newer, the same minimum the package already declared.
+- The attribute is emitted during generation rather than at post-initialization, because Roslyn 3.8 -
+  the version this analyzer targets, and the one Unity 2021.3 and 2022.3 require - has no
+  post-initialization step. Candidate classes are therefore matched on the attribute's written name;
+  an `ObjectPool` attribute that resolves to some other type is left alone.
+- Pooling is still not free: nothing returns an instance for you, `Return` does not detect a double
+  return, and a pool nothing is returned to is a leak with extra steps.
+
 ## [v1.5.2] - 2026-09-18
 
 ### Added
@@ -702,7 +751,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.2...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.3...HEAD
+[v1.5.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.2...v1.5.3
 [v1.5.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.1...v1.5.2
 [v1.5.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.0...v1.5.1
 [v1.5.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.4.0...v1.5.0
