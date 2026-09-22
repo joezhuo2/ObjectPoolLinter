@@ -409,6 +409,16 @@ public class Anything { }
         }
 
         [Fact]
+        public async Task OptionsValidation_UnknownSuppression()
+        {
+            await CreateTest<OptionsValidationAnalyzer>(
+                    AnySource,
+                    "object_pool_linter.suppressions = cached_fields",
+                    InvalidOption("'cached_fields' in 'object_pool_linter.suppressions' is not a suppression. Use all, none, first_frame, editor_only, static_latch or cached_field."))
+                .RunAsync();
+        }
+
+        [Fact]
         public async Task OptionsValidation_InvalidValues()
         {
             await CreateTest<OptionsValidationAnalyzer>(

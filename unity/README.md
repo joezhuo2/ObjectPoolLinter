@@ -17,6 +17,15 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
 - **OPL005** (warning): a class marked `[ObjectPool]` that the source generator cannot write a pool
   for - an abstract or static class, a `UnityEngine.Object`, or one with no reachable constructor.
 
+OPL001's code fixes also write the pool class itself when none exists, and rewrite a local array
+allocation into `ArrayPool<T>.Shared.Rent` with a `try`/`finally` that returns it.
+
+Allocations that are known not to run every frame are suppressed automatically: behind
+`if (Time.frameCount == 0)`, inside `#if UNITY_EDITOR`, behind a static `bool` latch the guarded
+branch sets, or assigned straight into a field. Set `object_pool_linter.suppressions` in
+`.editorconfig` to narrow that to the patterns you want, or to `none`. Full guide:
+`docs/suppressions.md` in the repository.
+
 ## Generating pools
 
 Mark a plain C# class `[ObjectPool]` and `{TypeName}Pool` is generated for you, in the shape OPL001's

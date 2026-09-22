@@ -27,4 +27,9 @@ namespace UnityEngine
     {
         public static Camera[] allCameras => System.Array.Empty<Camera>();
     }
+
+    public static class Time
+    {
+        public static int frameCount => 0;
+    }
 }

@@ -79,6 +79,7 @@ file named `.globalconfig` in the project folder; other names are added with
 | `object_pool_linter.params_severity` | Severity | OPL002 | 1.5.2 |
 | `object_pool_linter.linq_severity` | Severity | OPL002 | 1.5.2 |
 | `object_pool_linter.boxing_severity` | Severity | OPL002 | 1.5.2 |
+| `object_pool_linter.suppressions` | Comma-separated pattern names, `all` or `none` | OPL001, OPL002, OPL003 | 1.5.4 |
 | `dotnet_diagnostic.OPL00N.severity` | Severity | The named rule | Standard Roslyn |
 
 A severity is one of `none`, `silent`, `suggestion`, `warning`, `error`, the same words
@@ -209,6 +210,36 @@ How it combines with `dotnet_diagnostic.OPL002.severity`:
 
 Each OPL002 diagnostic carries its kind in the `AllocationKind` property (`string`, `delegate`,
 `params`, `linq` or `boxing`), for tools that read diagnostic properties.
+
+## Automatic suppressions (`suppressions`)
+
+OPL001, OPL002 and OPL003 are suppressed automatically where the allocation is known not to run every
+frame: behind a `Time.frameCount == 0` guard, inside `#if UNITY_EDITOR`, behind a static `bool` latch
+the guarded branch sets, or assigned straight into a field. Each pattern can be switched off by
+listing only the ones you want:
+
+```ini
+[*.cs]
+# Every pattern. This is the default, so the line only documents it.
+object_pool_linter.suppressions = all
+
+# Nothing is suppressed automatically: the rules report every allocation they find.
+object_pool_linter.suppressions = none
+
+# Only these two; a latch or a field assignment is reported as usual.
+object_pool_linter.suppressions = first_frame, editor_only
+```
+
+| Name | Suppresses an allocation that is |
+| --- | --- |
+| `first_frame` | In the taken branch of `if (Time.frameCount == 0)` |
+| `editor_only` | Inside `#if UNITY_EDITOR` |
+| `static_latch` | In the taken branch of an `if` on a static `bool` field the branch assigns |
+| `cached_field` | Assigned to a field |
+
+Names are case-insensitive, and an unknown one is reported as [OPL004](rules/OPL004.md) and leaves
+every pattern on. What each pattern matches exactly, and what it deliberately does not, is in
+[Automatic suppressions](suppressions.md).
 
 ## Checking your config (OPL004)
 

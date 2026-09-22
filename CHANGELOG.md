@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.5.4] - 2026-09-21
+
+### Added
+- **Generate the pool from the OPL001 code fix.** When nothing answers to `{TypeName}Pool` at the
+  allocation site, **Generate `{TypeName}Pool` and use it here** writes the pool beside the class the
+  allocation is in and rewrites the allocation to call it. The generated type is ordinary source in
+  your own file: a `Stack<T>` of instances, `Get` forwarding to the constructor that was used,
+  `Return`, `Clear`, `CountInactive`, and a `TODO` each for resetting a recycled instance and
+  releasing what it holds. A generic type produces a generic pool carrying the same constraints, so
+  `new List<int>()` writes `ListPool<T>` and calls `ListPool<int>.Get()`. Where `Return` is called
+  stays the developer's decision. Not offered when the name is taken, for an abstract or static
+  class, a `UnityEngine.Object`, a type nested in a generic type, a type or constructor out of reach
+  from the file's namespace level, or a call site that omits an optional argument or expands a
+  `params` list.
+- **`ArrayPool<T>.Shared` code fix for OPL001 array allocations.** **Rent the array from
+  `ArrayPool<T>.Shared`** rewrites `var buffer = new int[4]` into a `Rent` call wrapped in a
+  `try`/`finally` that returns the buffer. The length asked for moves into its own local and every
+  `buffer.Length` in the block is redirected to it, so the extra capacity a rented array may carry is
+  never read as the logical length; the size expression is evaluated once, and a buffer of reference
+  elements is returned with `clearArray: true`. Offered only where the buffer cannot escape its
+  block: a local that is only indexed and read for `Length`, never passed on, assigned, returned,
+  enumerated or captured.
+- **`ObjectPoolSuppressionAnalyzer`**, a `DiagnosticSuppressor` that suppresses OPL001, OPL002 and
+  OPL003 for four known-safe shapes: an allocation guarded by `Time.frameCount == 0` (`OPLS001`),
+  inside `#if UNITY_EDITOR` (`OPLS002`), guarded by a static `bool` latch the guarded branch assigns
+  (`OPLS003`), or assigned straight into a field (`OPLS004`). A suppressed diagnostic keeps its
+  justification, so the IDE greys it out and the build drops it from the warning count. See
+  [docs/suppressions.md](docs/suppressions.md).
+- **`object_pool_linter.suppressions`**, which narrows that set: `all` (the default), `none`, or any
+  of `first_frame`, `editor_only`, `static_latch` and `cached_field`. An unknown name is reported as
+  [OPL004](docs/rules/OPL004.md) and leaves every pattern on.
+- 29 tests, for 243 in total. `samples/SampleUnityCode` now carries a behaviour whose four
+  allocations are each suppressed by one of the patterns, so `build/verify-sample.ps1` proves the
+  suppressor over a real compilation: the sample still produces exactly its 8 expected warnings.
+
+### Changed
+- [README.md](README.md), [docs/rules/OPL001.md](docs/rules/OPL001.md),
+  [docs/configuration.md](docs/configuration.md), [docs/rules/OPL004.md](docs/rules/OPL004.md) and
+  the Unity package README document the two new fixes and the suppressions; OPL002's and OPL003's
+  **When to suppress** sections point at the suppressor.
+
 ## [v1.5.3] - 2026-09-21
 
 ### Added
@@ -751,7 +792,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.3...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.4...HEAD
+[v1.5.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.3...v1.5.4
 [v1.5.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.2...v1.5.3
 [v1.5.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.1...v1.5.2
 [v1.5.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.0...v1.5.1

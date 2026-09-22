@@ -30,12 +30,11 @@ namespace ObjectPoolLinter
 
             var node = root.FindNode(diagnosticSpan);
 
-            if (node is BaseObjectCreationExpressionSyntax { Initializer: null } objectCreation)
-            {
-                var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
+            var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
 
-                if (semanticModel != null &&
-                    TryGetPoolName(semanticModel, objectCreation, context.CancellationToken, out _))
+            if (semanticModel != null && node is BaseObjectCreationExpressionSyntax { Initializer: null } objectCreation)
+            {
+                if (TryGetPoolName(semanticModel, objectCreation, context.CancellationToken, out _))
                 {
                     context.RegisterCodeFix(
                         CodeAction.Create(
@@ -44,6 +43,27 @@ namespace ObjectPoolLinter
                             equivalenceKey: "ObjectPoolLinterReplaceWithPoolGet"),
                         diagnostic);
                 }
+                else if (PoolClassWriter.TryPlan(semanticModel, objectCreation, context.CancellationToken) is { } plan)
+                {
+                    // No pool exists yet, so the fix writes one beside the class it is used in and
+                    // routes this allocation through it. Handing the instance back stays manual.
+                    context.RegisterCodeFix(
+                        CodeAction.Create(
+                            title: "Generate " + plan.PoolName + " and use it here",
+                            createChangedDocument: c => GeneratePoolAsync(context.Document, objectCreation, c),
+                            equivalenceKey: "ObjectPoolLinterGeneratePool"),
+                        diagnostic);
+                }
+            }
+
+            if (semanticModel != null && ArrayPoolRewrite.TryPlan(semanticModel, node, context.CancellationToken) != null)
+            {
+                context.RegisterCodeFix(
+                    CodeAction.Create(
+                        title: "Rent the array from ArrayPool<T>.Shared",
+                        createChangedDocument: c => RentFromArrayPoolAsync(context.Document, node, c),
+                        equivalenceKey: "ObjectPoolLinterRentFromArrayPool"),
+                    diagnostic);
             }
 
             context.RegisterCodeFix(
@@ -80,6 +100,56 @@ namespace ObjectPoolLinter
 
             var newRoot = root.ReplaceNode(objectCreation, poolGet);
             return document.WithSyntaxRoot(newRoot);
+        }
+
+        private static async Task<Document> GeneratePoolAsync(
+            Document document,
+            BaseObjectCreationExpressionSyntax objectCreation,
+            CancellationToken cancellationToken)
+        {
+            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            if (root == null) return document;
+
+            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            if (semanticModel == null) return document;
+
+            if (PoolClassWriter.TryPlan(semanticModel, objectCreation, cancellationToken) is not { } plan) return document;
+
+            var eol = CodeFixSupport.GetEndOfLine(root);
+            var indent = CodeFixSupport.Indentation(plan.Anchor);
+            var unit = plan.Anchor is ClassDeclarationSyntax declaration ? CodeFixSupport.IndentUnit(declaration) : "    ";
+
+            var poolClass = SyntaxFactory.ParseMemberDeclaration(PoolClassWriter.Write(plan, indent, unit, eol));
+            if (poolClass == null) return document;
+
+            var poolGet = SyntaxFactory.InvocationExpression(
+                SyntaxFactory.MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    SyntaxFactory.ParseExpression(plan.Reference),
+                    SyntaxFactory.IdentifierName("Get")),
+                (objectCreation.ArgumentList ?? SyntaxFactory.ArgumentList()).WithoutTrivia()
+            ).WithTriviaFrom(objectCreation);
+
+            var newAnchor = plan.Anchor.ReplaceNode(objectCreation, poolGet);
+            var newRoot = root.ReplaceNode(plan.Anchor, new SyntaxNode[] { newAnchor, poolClass });
+
+            return document.WithSyntaxRoot(newRoot);
+        }
+
+        private static async Task<Document> RentFromArrayPoolAsync(
+            Document document,
+            SyntaxNode node,
+            CancellationToken cancellationToken)
+        {
+            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            if (root == null) return document;
+
+            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            if (semanticModel == null) return document;
+
+            if (ArrayPoolRewrite.TryPlan(semanticModel, node, cancellationToken) is not { } plan) return document;
+
+            return ArrayPoolRewrite.Apply(document, root, plan);
         }
 
         private static bool TryGetPoolName(

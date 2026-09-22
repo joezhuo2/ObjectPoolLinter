@@ -96,6 +96,42 @@ public static partial class BulletPool
     }
 }
 
+// Every allocation below is one ObjectPoolSuppressionAnalyzer suppresses, so none of them is
+// reported even though they all sit in Update.
+public class SuppressedPatterns : MonoBehaviour
+{
+    private static bool s_warmed;
+
+    private System.Collections.Generic.List<int> _cached = null!;
+
+    void Update()
+    {
+        // Suppressed (OPLS001): runs on the first frame only.
+        if (Time.frameCount == 0)
+        {
+            var warmup = new System.Collections.Generic.List<int>();
+            _ = warmup;
+        }
+
+        // Suppressed (OPLS003): the latch the branch sets makes this run once.
+        if (!s_warmed)
+        {
+            var once = new System.Collections.Generic.List<int>();
+            _ = once;
+            s_warmed = true;
+        }
+
+        // Suppressed (OPLS004): the object is cached in a field rather than thrown away.
+        _cached = new System.Collections.Generic.List<int>();
+
+#if UNITY_EDITOR
+        // Suppressed (OPLS002): editor-only, so it is not in a player build.
+        var editorOnly = new System.Collections.Generic.List<int>();
+        _ = editorOnly;
+#endif
+    }
+}
+
 public class Turret : MonoBehaviour
 {
     void Update()

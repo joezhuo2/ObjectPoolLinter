@@ -19,6 +19,19 @@ namespace ObjectPoolLinter
         Boxing,
     }
 
+    // The known-safe patterns ObjectPoolSuppressionAnalyzer suppresses a diagnostic for. Configured
+    // with `object_pool_linter.suppressions`; every pattern is on unless the option narrows the set.
+    [Flags]
+    internal enum SuppressionKind
+    {
+        None = 0,
+        FirstFrame = 1,
+        EditorOnly = 2,
+        StaticLatch = 4,
+        CachedField = 8,
+        All = FirstFrame | EditorOnly | StaticLatch | CachedField,
+    }
+
     // User configuration from .editorconfig, read per syntax tree. Every name is matched ordinally, so
     // `tick` does not match `Tick`. A type name is its simple name (`Enemy`) or its namespace-qualified
     // name with nested types separated by dots (`Game.AI.Enemy.Brain`); generic type parameters are
@@ -37,6 +50,8 @@ namespace ObjectPoolLinter
         internal const string LinqSeverityOption = Prefix + "linq_severity";
         internal const string BoxingSeverityOption = Prefix + "boxing_severity";
 
+        internal const string SuppressionsOption = Prefix + "suppressions";
+
         internal static readonly ImmutableArray<string> KnownOptions = ImmutableArray.Create(
             AdditionalHotMethodsOption,
             ExcludedTypesOption,
@@ -45,7 +60,8 @@ namespace ObjectPoolLinter
             DelegateSeverityOption,
             ParamsSeverityOption,
             LinqSeverityOption,
-            BoxingSeverityOption);
+            BoxingSeverityOption,
+            SuppressionsOption);
 
         private static readonly ImmutableArray<(AllocationKind Kind, string Option)> SeverityOptions = ImmutableArray.Create(
             (AllocationKind.String, StringSeverityOption),
@@ -53,6 +69,12 @@ namespace ObjectPoolLinter
             (AllocationKind.Params, ParamsSeverityOption),
             (AllocationKind.Linq, LinqSeverityOption),
             (AllocationKind.Boxing, BoxingSeverityOption));
+
+        private static readonly ImmutableArray<(string Name, SuppressionKind Kind)> SuppressionNames = ImmutableArray.Create(
+            ("first_frame", SuppressionKind.FirstFrame),
+            ("editor_only", SuppressionKind.EditorOnly),
+            ("static_latch", SuppressionKind.StaticLatch),
+            ("cached_field", SuppressionKind.CachedField));
 
         // A pathological pattern must not hang the build or the IDE.
         private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(250);
@@ -62,24 +84,28 @@ namespace ObjectPoolLinter
             ImmutableArray<string>.Empty,
             null,
             ImmutableDictionary<AllocationKind, ReportDiagnostic>.Empty,
+            SuppressionKind.All,
             ImmutableArray<string>.Empty);
 
         private readonly ImmutableArray<HotMethodEntry> _additionalHotMethods;
         private readonly ImmutableArray<string> _excludedTypes;
         private readonly Regex? _excludedTypesRegex;
         private readonly ImmutableDictionary<AllocationKind, ReportDiagnostic> _severities;
+        private readonly SuppressionKind _suppressions;
 
         private LinterOptions(
             ImmutableArray<HotMethodEntry> additionalHotMethods,
             ImmutableArray<string> excludedTypes,
             Regex? excludedTypesRegex,
             ImmutableDictionary<AllocationKind, ReportDiagnostic> severities,
+            SuppressionKind suppressions,
             ImmutableArray<string> problems)
         {
             _additionalHotMethods = additionalHotMethods;
             _excludedTypes = excludedTypes;
             _excludedTypesRegex = excludedTypesRegex;
             _severities = severities;
+            _suppressions = suppressions;
             Problems = problems;
         }
 
@@ -124,8 +150,10 @@ namespace ObjectPoolLinter
                     problems.Add($"'{value.Trim()}' in '{option}' is not a severity. Use none, silent, suggestion, warning, error or default.");
             }
 
+            var suppressions = ParseSuppressions(options, problems);
+
             if (additionalHotMethods.Count == 0 && excludedTypes.IsEmpty && excludedTypesRegex == null &&
-                severities.Count == 0 && problems.Count == 0)
+                severities.Count == 0 && suppressions == SuppressionKind.All && problems.Count == 0)
                 return Empty;
 
             return new LinterOptions(
@@ -133,6 +161,7 @@ namespace ObjectPoolLinter
                 excludedTypes,
                 excludedTypesRegex,
                 severities.ToImmutable(),
+                suppressions,
                 problems.ToImmutable());
         }
 
@@ -185,6 +214,54 @@ namespace ObjectPoolLinter
         internal ReportDiagnostic GetSeverity(AllocationKind kind)
         {
             return _severities.TryGetValue(kind, out var severity) ? severity : ReportDiagnostic.Default;
+        }
+
+        // Whether the suppressor may suppress a diagnostic for this pattern.
+        internal bool IsSuppressionEnabled(SuppressionKind kind)
+        {
+            return (_suppressions & kind) != 0;
+        }
+
+        // `all` (the default), `none`, or a list of pattern names. An unusable value leaves every
+        // pattern on and is reported as OPL004 rather than silently narrowing the set.
+        private static SuppressionKind ParseSuppressions(AnalyzerConfigOptions options, ImmutableArray<string>.Builder problems)
+        {
+            var entries = ParseList(options, SuppressionsOption);
+            if (entries.IsEmpty) return SuppressionKind.All;
+
+            var suppressions = SuppressionKind.None;
+            var failed = false;
+
+            foreach (var entry in entries)
+            {
+                var name = entry.ToLowerInvariant();
+
+                if (name == "all")
+                {
+                    suppressions |= SuppressionKind.All;
+                    continue;
+                }
+
+                if (name == "none") continue;
+
+                var known = false;
+                foreach (var (candidate, kind) in SuppressionNames)
+                {
+                    if (name != candidate) continue;
+
+                    suppressions |= kind;
+                    known = true;
+                    break;
+                }
+
+                if (known) continue;
+
+                failed = true;
+                problems.Add($"'{entry}' in '{SuppressionsOption}' is not a suppression. Use all, none, " +
+                             "first_frame, editor_only, static_latch or cached_field.");
+            }
+
+            return failed ? SuppressionKind.All : suppressions;
         }
 
         private static Regex? TryCompile(string pattern)

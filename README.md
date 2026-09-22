@@ -16,9 +16,10 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
-- **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
+- **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls, writes the pool class when none exists, rents local arrays from `ArrayPool<T>.Shared` inside a `try`/`finally`, or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
 - **Writes the pool for you**: `[ObjectPool]` on a class generates `{TypeName}Pool` with one `Get()` overload per constructor, plus `Return()`, `Clear()` and partial hooks for resetting a recycled instance - see [Generating pools](docs/source-generator.md)
-- **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. The fix itself never creates that type - see [The pool contract](#the-pool-contract)
+- **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. When nothing answers to that name, a second fix writes the pool first - see [The pool contract](#the-pool-contract)
+- **Quiet where it should be**: allocations behind a `Time.frameCount == 0` guard, inside `#if UNITY_EDITOR`, behind a static `bool` latch, or assigned straight into a field are suppressed automatically, and each pattern can be switched off - see [Automatic suppressions](#automatic-suppressions)
 
 What the rules deliberately do not cover — call-graph analysis, allocations the analyzer cannot see
 statically, and the allocation shapes with no replacement fix — is listed under
@@ -178,7 +179,8 @@ Each rule is documented in its own page, which also covers how to change its sev
 [OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md).
 
 Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
-that a method allocates nothing.
+that a method allocates nothing. Four shapes never report in the first place, because the analyzer
+suppresses them — see [Automatic suppressions](docs/suppressions.md).
 
 ### Configuration
 
@@ -217,26 +219,56 @@ When an OPL001 diagnostic is reported, you can apply one of these quick fixes (t
 fixes are described [below](#opl002-code-fixes)):
 
 1. **Replace with object pool Get()** - Replaces `new Type(args)` with `TypePool.Get(args)`
-2. **Add pooling TODO comment** - Adds a comment reminding you to use pooling (array allocations get
+2. **Generate TypePool and use it here** - Writes a `Stack<T>`-backed pool beside the class the
+   allocation is in, then rewrites the allocation to call it
+3. **Rent the array from ArrayPool&lt;T&gt;.Shared** - For an array allocation, rents the buffer and
+   returns it in a `finally`
+4. **Add pooling TODO comment** - Adds a comment reminding you to use pooling (array allocations get
    an array-specific comment pointing at `ArrayPool<T>.Shared`; boxed structs get one about avoiding
    the box)
 
 Constructor arguments are forwarded to `Get()` unchanged, so `new Enemy(hp)` becomes
-`EnemyPool.Get(hp)`. The pool itself is yours to write: the fix is only offered when a matching pool
-type is already in scope, and it never creates one. [The pool contract](#the-pool-contract) below
-spells out exactly what "matching" means and includes a minimal pool you can copy.
+`EnemyPool.Get(hp)`. The first fix is offered when a matching pool type is already in scope;
+[The pool contract](#the-pool-contract) below spells out exactly what "matching" means and includes a
+minimal pool you can copy.
+
+The second fix is offered instead when nothing answers to the pool's name. It writes the pool into
+your file as ordinary source: `Get` forwarding to the constructor that was used, `Return`, `Clear`,
+`CountInactive`, and two `TODO` comments for resetting a recycled instance and releasing what it
+holds. A generic type gets a generic pool, so `new List<int>()` produces `ListPool<T>` and calls
+`ListPool<int>.Get()`. **Where `Return` is called is still yours to write.** For a class you own,
+`[ObjectPool]` is usually the better route: see [Generating the pool](#generating-the-pool). The
+cases where neither pool fix is offered are listed in
+[docs/rules/OPL001.md](docs/rules/OPL001.md#code-fixes).
 
 The fix is **not** offered when the allocation carries an object or collection initializer
 (`new Enemy { Hp = 5 }`, `new List<int> { 1, 2 }`), because an initializer cannot be attached to a
 method call and dropping it would silently lose code. Use the TODO-comment fix there and rewrite the
 initializer by hand.
 
-It is also **not** offered for array allocations (`new int[4]`, `new[] { 1, 2 }`). Those are still
-reported, but there is no safe mechanical replacement: `ArrayPool<T>.Shared.Rent(4)` returns an array
-of length *at least* 4 rather than exactly 4, and the buffer has to be returned on every exit path.
-Only the TODO-comment fix is offered, and
-[docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) covers the ways to fix an array allocation by
-hand.
+The pool fixes are also **not** offered for array allocations (`new int[4]`, `new[] { 1, 2 }`).
+Those get the third fix instead, and only where it is safe: a local buffer, declared with its length,
+that the rest of its block only indexes and reads `Length` from. The length moves into its own local
+so the extra capacity a rented array carries is never read as the logical length, every
+`buffer.Length` is redirected to it, and the buffer is returned in a `finally` (with
+`clearArray: true` for reference elements):
+
+```csharp
+int bufferLength = 4;
+var buffer = System.Buffers.ArrayPool<int>.Shared.Rent(bufferLength);
+try
+{
+    for (int i = 0; i < bufferLength; i++) buffer[i] = i;
+}
+finally
+{
+    System.Buffers.ArrayPool<int>.Shared.Return(buffer);
+}
+```
+
+A buffer that is passed on, assigned, returned, enumerated or captured could outlive the block, so
+the fix is not offered there; [docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) covers the full
+condition and the ways to fix an array allocation by hand.
 
 ### OPL002 code fixes
 
@@ -274,12 +306,36 @@ APIs keep the manual fixes listed on that page.
 buffer fix hands back the same list on every run, so code that keeps it past the frame has to copy it.
 None of the three has fix-all support.
 
+## Automatic suppressions
+
+OPL001, OPL002 and OPL003 are suppressed automatically where the allocation is known not to run every
+frame. A suppressed diagnostic still exists, carrying its justification: the IDE greys it out and the
+build leaves it out of the warning count.
+
+| Suppression | Suppresses an allocation that is |
+| --- | --- |
+| `OPLS001` | In the taken branch of `if (Time.frameCount == 0)` |
+| `OPLS002` | Inside `#if UNITY_EDITOR` |
+| `OPLS003` | In the taken branch of an `if` on a static `bool` field the branch assigns |
+| `OPLS004` | Assigned straight into a field (`_buffer = new List<int>();`) |
+
+Narrow the set, or turn it off entirely, from `.editorconfig`:
+
+```ini
+[*.cs]
+# all (the default) | none | first_frame, editor_only, static_latch, cached_field
+object_pool_linter.suppressions = first_frame, editor_only
+```
+
+What each pattern matches exactly, what it deliberately does not, and how it interacts with pragmas
+and `[SuppressMessage]` is in [docs/suppressions.md](docs/suppressions.md).
+
 ## The pool contract
 
-The **Replace with object pool `Get()`** fix does not write a pool for you. It rewrites the
-allocation and nothing else, and it is only offered when a pool matching the contract below is
-already in scope. When no such type exists, the fix is not offered at all and only the TODO-comment
-fix appears.
+The **Replace with object pool `Get()`** fix rewrites the allocation and nothing else, and it is only
+offered when a pool matching the contract below is already in scope. When no such type exists, the
+**Generate `{TypeName}Pool` and use it here** fix takes its place and writes a pool that satisfies the
+contract by construction.
 
 Marking the allocated class `[ObjectPool]` generates a pool that satisfies this contract by
 construction; see [Generating the pool](#generating-the-pool) below.
@@ -426,18 +482,25 @@ members that return an array, plus `name` and `tag`. Still not reported by any r
 
 A clean run is not a claim that a method is allocation-free; a profiler is the final word.
 
-**Array allocations get no replacement fix.** `new int[4]` and `new[] { 1, 2 }` are reported, but only
-the TODO-comment fix is offered, because `ArrayPool<T>.Shared.Rent(4)` returns an array of length *at
-least* 4 and the buffer must be returned on every exit path. See
-[docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) for the three by-hand fixes.
+**Array allocations are only rewritten where the buffer cannot escape.** `new int[4]` is rewritten to
+`ArrayPool<T>.Shared.Rent` when the local it initializes is confined to its block and only indexed or
+asked for its `Length`; anything that could keep the buffer past the block (passing it on, assigning
+it, returning it, enumerating it, capturing it) leaves only the TODO-comment fix, as does
+`new[] { 1, 2 }` and every multi-dimensional array. See
+[docs/rules/OPL001.md](docs/rules/OPL001.md#arrays) for the by-hand fixes.
 
 **Allocations with an initializer get no replacement fix.** `new Enemy { Hp = 5 }` and
 `new List<int> { 1, 2 }` are reported, but an initializer cannot be carried onto a method call, so the
 fix would have to drop it. Rewrite the initializer by hand after taking the object from the pool.
 
-**The replacement fix never writes the pool and never releases the object.** It is offered only when a
-pool matching [the pool contract](#the-pool-contract) is already in scope, and it inserts no release
-call — returning the object is yours to do.
+**No pool fix releases the object.** Neither the replacement fix nor the pool-generating one inserts a
+`Return` call — handing the object back is yours to do, and a pool nothing is returned to is a leak
+with extra steps.
+
+**The suppressor is syntactic and local.** It recognizes four written-out shapes
+([Automatic suppressions](#automatic-suppressions)). A guard behind a method call or a property, and
+a latch on an instance field, are not recognized; `cached_field` conversely suppresses an assignment
+to a field even when a fresh object is assigned on every frame.
 
 ## License
 

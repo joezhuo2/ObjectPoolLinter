@@ -7,6 +7,11 @@ OPL001 tells you an allocation is in a hot path, and its code fix rewrites `new 
 Since 1.5.3 the analyzer package also carries a source generator: mark a class `[ObjectPool]` and the
 `{TypeName}Pool` class is written for you, in the same shape the code fix looks for.
 
+Since 1.5.4 a second code fix writes a pool too, straight into your own file, for the cases this
+generator cannot serve: a type you do not own, or a pool you want to edit by hand. It is a one-shot
+starting point rather than a pool kept in step with the constructors - see
+[docs/rules/OPL001.md](rules/OPL001.md#generating-the-pool-from-the-fix).
+
 ## Quick start
 
 ```csharp
