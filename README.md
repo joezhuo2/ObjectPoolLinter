@@ -6,12 +6,12 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 ## Features
 
-- **Three rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md) for a misspelled or invalid `object_pool_linter.*` option and [OPL005](docs/rules/OPL005.md) for an `[ObjectPool]` attribute the generator cannot act on:
+- **Three rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md) for a misspelled or invalid `object_pool_linter.*` option, [OPL005](docs/rules/OPL005.md) for an `[ObjectPool]` attribute the generator cannot act on, and [OPL006](docs/rules/OPL006.md) for a Unity job struct holding a managed field, which makes `Schedule()` throw:
 
   | Rule | Reports | Default |
   | --- | --- | --- |
   | [OPL001](docs/rules/OPL001.md) | `new` allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` | Warning |
-  | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ (including LINQ-style extension methods), boxing, and iterator and `async` state machines | Info |
+  | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ (including LINQ-style extension methods), boxing, iterator and `async` state machines, and `foreach` over an interface-typed collection | Info |
   | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`) and `name` / `tag` | Warning |
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
@@ -19,6 +19,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 - **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls, writes the pool class when none exists, rents local arrays from `ArrayPool<T>.Shared` inside a `try`/`finally`, or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
 - **Writes the pool for you**: `[ObjectPool]` on a class generates `{TypeName}Pool` with one `Get()` overload per constructor, plus `Return()`, `Clear()` and partial hooks for resetting a recycled instance - see [Generating pools](docs/source-generator.md)
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. When nothing answers to that name, a second fix writes the pool first - see [The pool contract](#the-pool-contract)
+- **Burst-aware**: nothing is reported inside a method Burst compiles (a `[BurstCompile]` job's `Execute`, a Burst static method), since Burst rejects managed allocations itself - see [Burst-compiled code](docs/rules/OPL001.md#burst-compiled-code)
 - **Quiet where it should be**: allocations behind a `Time.frameCount == 0` guard, inside `#if UNITY_EDITOR`, behind a static `bool` latch, or assigned straight into a field are suppressed automatically, and each pattern can be switched off - see [Automatic suppressions](#automatic-suppressions)
 
 What the rules deliberately do not cover — call-graph analysis, allocations the analyzer cannot see
@@ -176,7 +177,7 @@ The analyzer runs automatically during build and in IDEs that support Roslyn ana
 
 Each rule is documented in its own page, which also covers how to change its severity or suppress it:
 [OPL001](docs/rules/OPL001.md), [OPL002](docs/rules/OPL002.md), [OPL003](docs/rules/OPL003.md),
-[OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md).
+[OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md), [OPL006](docs/rules/OPL006.md).
 
 Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing. Four shapes never report in the first place, because the analyzer
@@ -198,7 +199,8 @@ object_pool_linter.additional_hot_methods = Tick(float), Simulate, OnPreCull, En
 object_pool_linter.excluded_types = LoadingScreen, Game.Editor.GizmoDrawer
 object_pool_linter.excluded_types_regex = ^Game\.Debug\.
 
-# OPL002 severity per kind of allocation: string, delegate, params, linq, boxing, iterator, async.
+# OPL002 severity per kind of allocation: string, delegate, params, linq, boxing, iterator, async,
+# enumerator.
 object_pool_linter.linq_severity = warning
 object_pool_linter.boxing_severity = warning
 object_pool_linter.params_severity = none
@@ -472,12 +474,15 @@ captures state.)
 `UnityEngine.Object.Instantiate`. OPL002 matches string concatenation and interpolation,
 `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ
 (`System.Linq.Enumerable` and extension methods from other classes that take `IEnumerable<T>` or
-`IEnumerable`), boxing, and calls to iterator and `async` methods, and is Info by default, so
+`IEnumerable`), boxing, calls to iterator and `async` methods, and `foreach` loops whose enumerator
+comes back through an interface (`IList<T>`, `IEnumerable<T>`, a `Transform`), and is Info by default, so
 the Unity Console does not show it until it is raised to a warning. OPL003 matches `UnityEngine`
 members that return an array, plus `name` and `tag`. Still not reported by any rule:
 
-- `foreach` over an interface-typed collection (which boxes the enumerator), and allocations inside
-  base class library or Unity methods other than the ones above;
+- allocations inside base class library or Unity methods other than the ones above, and a custom
+  enumerator class returned by a collection's own public `GetEnumerator()` (`foreach` over `List<T>`,
+  arrays, `Dictionary` and other collections with a struct enumerator allocates nothing, and is rightly
+  silent);
 - iterator property getters, iterator and `async` methods in assemblies referenced only as reference
   assemblies (which drop the compiler's state-machine attributes), and `async` methods returning a
   pooled task-like type such as UniTask or `Awaitable`, which is deliberate;
@@ -486,6 +491,10 @@ members that return an array, plus `name` and `tag`. Still not reported by any r
 - Unity APIs that cost CPU time without allocating, such as `GameObject.Find` and `GetComponent<T>()`;
 - Unity string properties other than `name` and `tag`, and array-returning members of managed packages
   outside the core `UnityEngine` namespace (`UnityEngine.UI` and others).
+
+Code that Burst compiles is never reported, by design: Burst refuses managed allocations when it
+compiles, so they cannot reach the player. `[BurstCompile]` on a MonoBehaviour's `Update` does nothing
+in Unity, and the method is still reported.
 
 A clean run is not a claim that a method is allocation-free; a profiler is the final word.
 

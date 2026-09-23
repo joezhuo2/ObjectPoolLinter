@@ -181,3 +181,43 @@ public static class SequenceExtensions
         return count;
     }
 }
+
+// 1.5.6: a foreach that gets its enumerator through an interface, a Burst-compiled job, and a job
+// struct holding a managed field.
+public class Squad : MonoBehaviour
+{
+    readonly System.Collections.Generic.IReadOnlyList<int> _hp = new System.Collections.Generic.List<int>();
+
+    void Update()
+    {
+        var total = 0;
+
+        // OPL002: the list is typed as an interface, so its struct enumerator is boxed every frame
+        foreach (var hp in _hp)
+            total += hp;
+    }
+}
+
+// No OPL001: Burst compiles Execute (listed in additional_hot_methods) and rejects managed
+// allocations itself, so nothing reports inside it.
+[Unity.Burst.BurstCompile]
+public struct SumJob : Unity.Jobs.IJob
+{
+    public int Count;
+
+    public void Execute()
+    {
+        var scratch = new int[Count];
+    }
+}
+
+// OPL006: Schedule() throws InvalidOperationException for a job struct holding a string
+public struct LabelJob : Unity.Jobs.IJob
+{
+    public string Label;
+    public int Count;
+
+    public void Execute()
+    {
+    }
+}

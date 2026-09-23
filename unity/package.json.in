@@ -2,7 +2,7 @@
   "name": "com.joezhuo.objectpoollinter",
   "version": "__VERSION__",
   "displayName": "ObjectPoolLinter",
-  "description": "Roslyn analyzer for Unity C# that flags allocations in hot paths (Update, FixedUpdate, OnTriggerStay, ...): new objects, hidden allocations such as strings, closures, LINQ, boxing and iterator and async state machines, and allocating Unity APIs. Offers code fixes that route object allocations through an object pool.",
+  "description": "Roslyn analyzer for Unity C# that flags allocations in hot paths (Update, FixedUpdate, OnTriggerStay, ...): new objects, hidden allocations such as strings, closures, LINQ, boxing, iterator and async state machines and boxed foreach enumerators, and allocating Unity APIs. Also flags job structs holding managed fields, and skips Burst-compiled code. Offers code fixes that route object allocations through an object pool.",
   "unity": "2021.3",
   "keywords": [
     "roslyn",

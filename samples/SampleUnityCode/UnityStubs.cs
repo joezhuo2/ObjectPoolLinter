@@ -33,3 +33,19 @@ namespace UnityEngine
         public static int frameCount => 0;
     }
 }
+
+namespace Unity.Burst
+{
+    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct | System.AttributeTargets.Method)]
+    public class BurstCompileAttribute : System.Attribute
+    {
+    }
+}
+
+namespace Unity.Jobs
+{
+    public interface IJob
+    {
+        void Execute();
+    }
+}

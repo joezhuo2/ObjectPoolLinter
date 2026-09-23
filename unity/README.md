@@ -8,7 +8,8 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
 - **OPL002** (info): string concatenation and interpolation, `string.Concat`, `string.Format`,
   `StringBuilder.ToString()`, capturing lambdas, method-group delegates,
   implicit `params` arrays, LINQ (including LINQ-style extension methods on `IEnumerable<T>`),
-  boxing, and calls to iterator and `async` methods, with code fixes that cache lambdas and delegates in
+  boxing, calls to iterator and `async` methods, and `foreach` over an interface-typed collection
+  (which boxes the enumerator), with code fixes that cache lambdas and delegates in
   `Awake()`, build interpolated strings with a reused `StringBuilder`, and turn simple LINQ chains into
   a loop.
 - **OPL003** (warning): Unity APIs that return a new array, such as `GetComponentsInChildren<T>()`,
@@ -17,6 +18,12 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
   `Input.touches` through `Input.touchCount` and `Input.GetTouch(i)`.
 - **OPL005** (warning): a class marked `[ObjectPool]` that the source generator cannot write a pool
   for - an abstract or static class, a `UnityEngine.Object`, or one with no reachable constructor.
+- **OPL006** (warning): a field of managed type (a class, array, `string`, or a struct holding one) in
+  a job struct (`IJob`, `IJobFor`, `IJobParallelFor`, ...), which makes `Schedule()` throw
+  `InvalidOperationException`.
+
+Nothing is reported inside code Burst compiles (a `[BurstCompile]` job or static method): Burst
+rejects managed allocations itself.
 
 OPL001's code fixes also write the pool class itself when none exists, and rewrite a local array
 allocation into `ArrayPool<T>.Shared.Rent` with a `try`/`finally` that returns it.
@@ -101,6 +108,7 @@ apply):
 object_pool_linter.linq_severity = warning
 object_pool_linter.boxing_severity = warning
 object_pool_linter.iterator_severity = warning   # coroutines started every frame
+object_pool_linter.enumerator_severity = warning # foreach over IList<T>, IEnumerable<T>, Transform
 ```
 
 Installing, upgrading and pinning this package through the Package Manager, and why its asset GUIDs

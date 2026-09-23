@@ -44,6 +44,7 @@ lines in the right file and the next build, or the IDE's next analysis pass, pic
    object_pool_linter.params_severity = suggestion
    object_pool_linter.iterator_severity = warning
    object_pool_linter.async_severity = suggestion
+   object_pool_linter.enumerator_severity = warning
    ```
 
 3. Rebuild (`dotnet build`) or, in Unity, let the scripts recompile. A misspelled or unusable option
@@ -83,6 +84,7 @@ file named `.globalconfig` in the project folder; other names are added with
 | `object_pool_linter.boxing_severity` | Severity | OPL002 | 1.5.2 |
 | `object_pool_linter.iterator_severity` | Severity | OPL002 | 1.5.5 |
 | `object_pool_linter.async_severity` | Severity | OPL002 | 1.5.5 |
+| `object_pool_linter.enumerator_severity` | Severity | OPL002 | 1.5.6 |
 | `object_pool_linter.suppressions` | Comma-separated pattern names, `all` or `none` | OPL001, OPL002, OPL003 | 1.5.4 |
 | `dotnet_diagnostic.OPL00N.severity` | Severity | The named rule | Standard Roslyn |
 
@@ -169,6 +171,7 @@ dotnet_diagnostic.OPL002.severity = warning      # default is suggestion (Info)
 dotnet_diagnostic.OPL003.severity = error
 dotnet_diagnostic.OPL004.severity = warning      # default
 dotnet_diagnostic.OPL005.severity = warning      # default
+dotnet_diagnostic.OPL006.severity = warning      # default
 ```
 
 `none` turns a rule off. For a single site, use `#pragma warning disable OPL001` or a
@@ -181,7 +184,7 @@ everything it takes is on the attribute. See
 
 ## Per-kind OPL002 severity
 
-[OPL002](rules/OPL002.md) covers seven kinds of hidden allocation, and they are rarely equally
+[OPL002](rules/OPL002.md) covers eight kinds of hidden allocation, and they are rarely equally
 important. Each kind has its own severity option:
 
 | Option | Kind | Messages it covers |
@@ -193,6 +196,7 @@ important. Each kind has its own severity option:
 | `object_pool_linter.boxing_severity` | Boxing | `boxing ...` |
 | `object_pool_linter.iterator_severity` | Iterator state machines | `iterator state machine for ...()` |
 | `object_pool_linter.async_severity` | Async state machines | `async state machine for ...()` |
+| `object_pool_linter.enumerator_severity` | `foreach` enumerators obtained through an interface | `enumerator for foreach over ...` |
 
 ```ini
 [*.cs]

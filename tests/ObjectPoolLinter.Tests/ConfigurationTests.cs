@@ -377,6 +377,36 @@ public class Spawner : MonoBehaviour
                 .RunAsync();
         }
 
+        [Fact]
+        public async Task KindSeverity_Enumerator()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    IList<int> hp = new List<int>();
+
+    void Update()
+    {
+        {|#0:foreach (var h in hp)|} { }
+    }
+}
+";
+
+            await CreateTest<HiddenAllocationAnalyzer>(
+                    source,
+                    "object_pool_linter.enumerator_severity = warning",
+                    Hidden("enumerator for foreach over IList<int>", DiagnosticSeverity.Warning, 0))
+                .RunAsync();
+
+            await CreateTest<HiddenAllocationAnalyzer>(
+                    source.Replace("{|#0:", "").Replace(")|}", ")"),
+                    "object_pool_linter.enumerator_severity = none")
+                .RunAsync();
+        }
+
         // --- OPL004 ---
 
         private const string AnySource = @"
@@ -407,6 +437,7 @@ public class Anything { }
                     "object_pool_linter.string_severity = default\n" +
                     "object_pool_linter.iterator_severity = warning\n" +
                     "object_pool_linter.async_severity = none\n" +
+                    "object_pool_linter.enumerator_severity = suggestion\n" +
                     "dotnet_diagnostic.OPL002.severity = warning\n" +
                     "indent_style = space")
                 .RunAsync();

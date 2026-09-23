@@ -1,6 +1,6 @@
 # Exercises the configuration options; build/verify-sample.ps1 relies on every line.
 [*.cs]
-object_pool_linter.additional_hot_methods = Tick
+object_pool_linter.additional_hot_methods = Tick, Execute
 object_pool_linter.excluded_types = LoadingScreen
 
 # OPL002 defaults to Info, which the build output does not print. Raise it so the script can assert it.

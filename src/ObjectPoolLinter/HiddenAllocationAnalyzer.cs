@@ -8,6 +8,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;
+using Microsoft.CodeAnalysis.Text;
 
 namespace ObjectPoolLinter
 {
@@ -22,7 +23,7 @@ namespace ObjectPoolLinter
         private const string Category = "Performance";
         private static readonly LocalizableString Title = "Hidden allocation in hot path";
         private static readonly LocalizableString MessageFormat = "'{0}' allocates inside the frequently-called method '{1}'. Move it out of the method or cache the result.";
-        private static readonly LocalizableString Description = "String concatenation and interpolation, string.Concat, string.Format, StringBuilder.ToString, capturing lambdas, method-group delegates, implicit params arrays, LINQ (including LINQ-style extension methods on IEnumerable<T>), boxing, and the state machines of iterator and async methods all allocate without a 'new' in the source. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
+        private static readonly LocalizableString Description = "String concatenation and interpolation, string.Concat, string.Format, StringBuilder.ToString, capturing lambdas, method-group delegates, implicit params arrays, LINQ (including LINQ-style extension methods on IEnumerable<T>), boxing, foreach loops that get their enumerator through an interface, and the state machines of iterator and async methods all allocate without a 'new' in the source. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
 
         internal const string HelpLinkUri = "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/docs/rules/OPL002.md";
 
@@ -44,10 +45,10 @@ namespace ObjectPoolLinter
         private const LanguageVersion CSharp11 = (LanguageVersion)1100;
 
         // Diagnostic property naming the kind of allocation: string, delegate, params, linq, boxing,
-        // iterator or async.
+        // iterator, async or enumerator.
         internal const string AllocationKindProperty = "AllocationKind";
 
-        private static readonly string[] KindNames = { "string", "delegate", "params", "linq", "boxing", "iterator", "async" };
+        private static readonly string[] KindNames = { "string", "delegate", "params", "linq", "boxing", "iterator", "async", "enumerator" };
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
@@ -75,6 +76,7 @@ namespace ObjectPoolLinter
             context.RegisterOperationAction(analyzer.AnalyzeTranslatedQuery, OperationKind.TranslatedQuery);
             context.RegisterOperationAction(analyzer.AnalyzeConversion, OperationKind.Conversion);
             context.RegisterSyntaxNodeAction(analyzer.AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
+            context.RegisterSyntaxNodeAction(analyzer.AnalyzeForEach, SyntaxKind.ForEachStatement, SyntaxKind.ForEachVariableStatement);
         }
 
         private sealed class CompilationAnalyzer
@@ -297,6 +299,57 @@ namespace ObjectPoolLinter
                     context.Options,
                     kind.Value,
                     DescribeStateMachine(kind.Value, method),
+                    context.CancellationToken);
+                if (diagnostic != null) context.ReportDiagnostic(diagnostic);
+            }
+
+            // A `foreach` whose GetEnumerator returns IEnumerator<T> or IEnumerator rather than a concrete
+            // enumerator: the collection is typed as an interface (IEnumerable<T>, IList<T>,
+            // IReadOnlyList<T>), is a struct that implements IEnumerable<T> explicitly, or has a public
+            // GetEnumerator declared to return the interface. A struct enumerator such as List<T>'s is
+            // boxed to reach the caller; a class enumerator is allocated outright. A foreach over the
+            // concrete List<T> or Dictionary<TKey, TValue>, an array or a string allocates nothing.
+            internal void AnalyzeForEach(SyntaxNodeAnalysisContext context)
+            {
+                var loop = (CommonForEachStatementSyntax)context.Node;
+                if (loop.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword)) return;
+
+                var semanticModel = context.SemanticModel;
+                var getEnumerator = semanticModel.GetForEachStatementInfo(loop).GetEnumeratorMethod;
+                if (getEnumerator?.ReturnType is not { TypeKind: TypeKind.Interface }) return;
+
+                var expression = loop.Expression;
+                while (expression is ParenthesizedExpressionSyntax parenthesized)
+                    expression = parenthesized.Expression;
+
+                var collectionType = semanticModel.GetTypeInfo(expression, context.CancellationToken).Type;
+                if (collectionType == null ||
+                    collectionType.TypeKind is TypeKind.Array or TypeKind.Dynamic or TypeKind.Error ||
+                    collectionType.SpecialType == SpecialType.System_String)
+                    return;
+
+                // A LINQ call or query is reported already, enumeration included, and an iterator's
+                // GetEnumerator hands back the state machine the call already allocated.
+                switch (semanticModel.GetOperation(expression, context.CancellationToken))
+                {
+                    case ITranslatedQueryOperation:
+                        return;
+                    case IInvocationOperation invocation when IsLinqCall(invocation) ||
+                                                              GetStateMachineKind(invocation.TargetMethod) == AllocationKind.Iterator:
+                        return;
+                }
+
+                var header = Location.Create(
+                    loop.SyntaxTree,
+                    TextSpan.FromBounds(loop.ForEachKeyword.SpanStart, loop.CloseParenToken.Span.End));
+
+                var diagnostic = CreateDiagnostic(
+                    loop,
+                    header,
+                    semanticModel,
+                    context.Options,
+                    AllocationKind.Enumerator,
+                    "enumerator for foreach over " + Display(collectionType),
                     context.CancellationToken);
                 if (diagnostic != null) context.ReportDiagnostic(diagnostic);
             }

@@ -959,6 +959,195 @@ public class Loader : MonoBehaviour
             await test.RunAsync();
         }
 
+        // --- foreach enumerators (F7) ---
+
+        [Fact]
+        public async Task ForEachOverInterface_Reports()
+        {
+            var source = @"
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    IList<int> hp = new List<int>();
+    IReadOnlyList<float> speeds = new List<float>();
+    IEnumerable<int> ids = new List<int>();
+    IDictionary<int, string> names = new Dictionary<int, string>();
+    IEnumerable untyped = new ArrayList();
+
+    void Update()
+    {
+        {|#0:foreach (var h in hp)|} { }
+        {|#1:foreach (var s in speeds)|} { }
+        {|#2:foreach (var id in (ids))|} { }
+        {|#3:foreach (var (key, value) in names)|} { }
+        {|#4:foreach (object o in untyped)|} { }
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("enumerator for foreach over IList<int>"),
+                Diagnostic("enumerator for foreach over IReadOnlyList<float>", location: 1),
+                Diagnostic("enumerator for foreach over IEnumerable<int>", location: 2),
+                Diagnostic("enumerator for foreach over IDictionary<int, string>", location: 3),
+                Diagnostic("enumerator for foreach over IEnumerable", location: 4));
+        }
+
+        [Fact]
+        public async Task ForEachOverConcreteCollection_DoesNotReport()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    List<int> hp = new List<int>();
+    int[] ids = new int[4];
+    int[,] grid = new int[2, 2];
+    string label = ""abc"";
+    Dictionary<int, string> names = new Dictionary<int, string>();
+    HashSet<int> seen = new HashSet<int>();
+
+    void Update()
+    {
+        foreach (var h in hp) { }
+        foreach (var id in ids) { }
+        foreach (var cell in grid) { }
+        foreach (var c in label) { }
+        foreach (var pair in names) { }
+        foreach (var s in seen) { }
+        foreach (var x in ids.AsSpan()) { }
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        // A struct that implements IEnumerable<T> only explicitly is boxed to reach GetEnumerator, and
+        // the enumerator comes back boxed as well: two allocations, reported separately.
+        [Fact]
+        public async Task ForEachThroughInterfaceReturningGetEnumerator_Reports()
+        {
+            var source = @"
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using UnityEngine;
+
+public struct Bag : IEnumerable<int>
+{
+    IEnumerator<int> IEnumerable<int>.GetEnumerator() { yield break; }
+    IEnumerator IEnumerable.GetEnumerator() { yield break; }
+}
+
+public class Squad : MonoBehaviour
+{
+    Bag bag;
+    ReadOnlyCollection<int> view = new List<int>().AsReadOnly();
+
+    void Scan<T>(T items) where T : IEnumerable<int>
+    {
+        foreach (var i in items) { }
+    }
+
+    void Update()
+    {
+        {|#0:foreach (var b in {|#2:bag|})|} { }
+        {|#1:foreach (var v in view)|} { }
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("enumerator for foreach over Bag"),
+                Diagnostic("enumerator for foreach over ReadOnlyCollection<int>", location: 1),
+                Diagnostic("boxing Bag to IEnumerable<int>", location: 2));
+        }
+
+        [Fact]
+        public async Task ForEachOverLinqOrIterator_ReportsOnlyTheCall()
+        {
+            var source = @"
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    List<int> hp = new List<int>();
+
+    IEnumerable<int> Alive()
+    {
+        foreach (var h in hp) if (h > 0) yield return h;
+    }
+
+    void Update()
+    {
+        foreach (var h in {|#0:hp.Where(x => x > 0)|}) { }
+        foreach (var h in {|#1:from x in hp select x|}) { }
+        foreach (var h in {|#2:Alive()|}) { }
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("LINQ Where()"),
+                Diagnostic("LINQ query", location: 1),
+                Diagnostic("iterator state machine for Alive()", location: 2));
+        }
+
+        [Fact]
+        public async Task ForEachOutsideHotPath_DoesNotReport()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    IList<int> hp = new List<int>();
+
+    void Start()
+    {
+        foreach (var h in hp) { }
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        [Fact]
+        public async Task AwaitForEach_IsNotAnEnumeratorAllocation()
+        {
+            var source = @"
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    IAsyncEnumerable<int> stream;
+
+    async void {|#0:Update|}()
+    {
+        await foreach (var x in stream) { }
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("async state machine for Update()"));
+        }
+
         private static async Task<MetadataReference> CompileLibraryAsync(string source)
         {
             var references = await ReferenceAssemblies.Net.Net80.ResolveAsync(LanguageNames.CSharp, CancellationToken.None);

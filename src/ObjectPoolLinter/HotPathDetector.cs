@@ -18,6 +18,9 @@ namespace ObjectPoolLinter
     {
         internal const string MonoBehaviourMetadataName = "UnityEngine.MonoBehaviour";
 
+        private const string BurstCompileMetadataName = "Unity.Burst.BurstCompileAttribute";
+        private const string BurstDiscardMetadataName = "Unity.Burst.BurstDiscardAttribute";
+
         private const string NoParameters = "";
 
         private static readonly ImmutableDictionary<string, string> HotPathMessageSignatures =
@@ -44,19 +47,31 @@ namespace ObjectPoolLinter
             }.ToImmutableDictionary(System.StringComparer.Ordinal);
 
         private readonly INamedTypeSymbol _monoBehaviour;
+
+        // Null when the compilation does not reference the Burst package.
+        private readonly INamedTypeSymbol? _burstCompile;
+        private readonly INamedTypeSymbol? _burstDiscard;
+
         private readonly ConcurrentDictionary<SyntaxTree, LinterOptions> _optionsByTree = new();
         private readonly ConcurrentDictionary<string, Regex?> _regexCache = new(System.StringComparer.Ordinal);
 
-        private HotPathDetector(INamedTypeSymbol monoBehaviour)
+        private HotPathDetector(INamedTypeSymbol monoBehaviour, INamedTypeSymbol? burstCompile, INamedTypeSymbol? burstDiscard)
         {
             _monoBehaviour = monoBehaviour;
+            _burstCompile = burstCompile;
+            _burstDiscard = burstDiscard;
         }
 
         // Null when the compilation does not reference UnityEngine.MonoBehaviour; no rule runs then.
         internal static HotPathDetector? Create(Compilation compilation)
         {
             var monoBehaviour = compilation.GetTypeByMetadataName(MonoBehaviourMetadataName);
-            return monoBehaviour == null ? null : new HotPathDetector(monoBehaviour);
+            if (monoBehaviour == null) return null;
+
+            return new HotPathDetector(
+                monoBehaviour,
+                compilation.GetTypeByMetadataName(BurstCompileMetadataName),
+                compilation.GetTypeByMetadataName(BurstDiscardMetadataName));
         }
 
         internal bool TryGetHotPathMethod(
@@ -78,6 +93,8 @@ namespace ObjectPoolLinter
             if (options.IsExcludedType(methodSymbol.ContainingType)) return false;
 
             if (!options.IsAdditionalHotMethod(methodSymbol) && !IsUnityMessage(methodSymbol)) return false;
+
+            if (IsBurstCompiled(methodSymbol)) return false;
 
             methodName = methodSymbol.Name;
             return true;
@@ -120,6 +137,39 @@ namespace ObjectPoolLinter
                 }
 
                 containingType = containingType.BaseType;
+            }
+
+            return false;
+        }
+
+        // Burst compiles a job struct's methods, an ISystem struct's methods and static methods when the
+        // method or a type containing it carries [BurstCompile], and it rejects managed allocations at
+        // compile time, so nothing inside can put garbage on the heap. An instance method of a class,
+        // such as a MonoBehaviour's Update, always runs as managed code whatever it is marked with, and so
+        // does a [BurstDiscard] method.
+        private bool IsBurstCompiled(IMethodSymbol method)
+        {
+            if (_burstCompile == null) return false;
+            if (!method.IsStatic && method.ContainingType.TypeKind != TypeKind.Struct) return false;
+            if (HasAttribute(method, _burstDiscard)) return false;
+
+            if (HasAttribute(method, _burstCompile)) return true;
+
+            for (var type = method.ContainingType; type != null; type = type.ContainingType)
+            {
+                if (HasAttribute(type, _burstCompile)) return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasAttribute(ISymbol symbol, INamedTypeSymbol? attributeType)
+        {
+            if (attributeType == null) return false;
+
+            foreach (var attribute in symbol.GetAttributes())
+            {
+                if (SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, attributeType)) return true;
             }
 
             return false;

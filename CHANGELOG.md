@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.5.6] - 2026-09-22
+
+### Added
+- **OPL002 reports `foreach` loops that box their enumerator.** A `foreach` whose `GetEnumerator`
+  returns `IEnumerator<T>` or `IEnumerator` rather than a concrete enumerator allocates on every loop:
+  over an `IList<T>`, `IReadOnlyList<T>`, `IEnumerable<T>` or `IDictionary<TKey, TValue>` the
+  collection's struct enumerator is boxed, and a `ReadOnlyCollection<T>` or Unity `Transform` hands
+  back a class enumerator. The loop header is reported as `enumerator for foreach over IList<int>`.
+  `foreach` over `List<T>`, arrays, `string`, `Span<T>`, `Dictionary` and `HashSet<T>` stays quiet, as
+  does a `foreach` over a LINQ call or an iterator method (the call is reported already) and
+  `await foreach`. A struct collection that implements `IEnumerable<T>` only explicitly is also boxed
+  itself, which the existing boxing check reports separately.
+- **`object_pool_linter.enumerator_severity`**, the per-kind severity for the new kind. Diagnostics
+  carry `AllocationKind` = `enumerator`.
+- **Burst-compiled code is never reported.** OPL001, OPL002 and OPL003 stay quiet inside a method
+  marked `[BurstCompile]`, or declared in a type marked `[BurstCompile]`, when the method is static or
+  belongs to a struct: a job's `Execute`, an `ISystem`'s `OnUpdate`, a Burst static method. Burst
+  rejects managed allocations when it compiles, so they cannot reach the player. An instance method of
+  a class (a MonoBehaviour's `Update`) is never Burst-compiled and is still reported whatever it is
+  marked with, and so is a `[BurstDiscard]` method.
+- **OPL006, managed field in job struct** (Warning). A struct implementing `IJob`, `IJobFor`,
+  `IJobParallelFor`, `IJobParallelForTransform`, a Collections or Entities job interface, or any
+  interface marked `[JobProducerType]`, is reported for each instance field or auto-property of a
+  reference type, or of a struct holding one at any depth (`has the type 'Payload', which holds
+  'Data.Name' of reference type 'string'`). Unity throws `InvalidOperationException` when such a job is
+  scheduled. Native containers (`[NativeContainer]`) and fields marked
+  `[NativeSetClassTypeToNullOnSchedule]` are allowed. The rule does not depend on hot paths and runs
+  only when the compilation references a job interface.
+- 21 tests, for 278 in total. `samples/SampleUnityCode` gains a `Squad` behaviour with a `foreach` over
+  an `IReadOnlyList<int>`, a `[BurstCompile]` job whose allocation stays unreported, and a job struct
+  with a `string` field; `build/verify-sample.ps1` now expects 13 warnings and recognizes OPL006's
+  message.
+
+### Changed
+- New page [docs/rules/OPL006.md](docs/rules/OPL006.md). [README.md](README.md),
+  [docs/rules/OPL001.md](docs/rules/OPL001.md) (new *Burst-compiled code* section),
+  [docs/rules/OPL002.md](docs/rules/OPL002.md), [docs/rules/OPL003.md](docs/rules/OPL003.md),
+  [docs/configuration.md](docs/configuration.md) and the Unity package README describe the new
+  detection, the Burst exemption and OPL006. The Known limitations section no longer lists `foreach`
+  over an interface-typed collection as unreported.
+- No code fix is offered for the enumerator or OPL006 diagnostics; the rule pages list the by-hand
+  fixes.
+
 ## [v1.5.5] - 2026-09-22
 
 ### Added
@@ -830,7 +873,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.5...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.6...HEAD
+[v1.5.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.5...v1.5.6
 [v1.5.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.4...v1.5.5
 [v1.5.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.3...v1.5.4
 [v1.5.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.2...v1.5.3

@@ -19,6 +19,7 @@ namespace ObjectPoolLinter
         Boxing,
         Iterator,
         Async,
+        Enumerator,
     }
 
     // The known-safe patterns ObjectPoolSuppressionAnalyzer suppresses a diagnostic for. Configured
@@ -53,6 +54,7 @@ namespace ObjectPoolLinter
         internal const string BoxingSeverityOption = Prefix + "boxing_severity";
         internal const string IteratorSeverityOption = Prefix + "iterator_severity";
         internal const string AsyncSeverityOption = Prefix + "async_severity";
+        internal const string EnumeratorSeverityOption = Prefix + "enumerator_severity";
 
         internal const string SuppressionsOption = Prefix + "suppressions";
 
@@ -67,6 +69,7 @@ namespace ObjectPoolLinter
             BoxingSeverityOption,
             IteratorSeverityOption,
             AsyncSeverityOption,
+            EnumeratorSeverityOption,
             SuppressionsOption);
 
         private static readonly ImmutableArray<(AllocationKind Kind, string Option)> SeverityOptions = ImmutableArray.Create(
@@ -76,7 +79,8 @@ namespace ObjectPoolLinter
             (AllocationKind.Linq, LinqSeverityOption),
             (AllocationKind.Boxing, BoxingSeverityOption),
             (AllocationKind.Iterator, IteratorSeverityOption),
-            (AllocationKind.Async, AsyncSeverityOption));
+            (AllocationKind.Async, AsyncSeverityOption),
+            (AllocationKind.Enumerator, EnumeratorSeverityOption));
 
         private static readonly ImmutableArray<(string Name, SuppressionKind Kind)> SuppressionNames = ImmutableArray.Create(
             ("first_frame", SuppressionKind.FirstFrame),

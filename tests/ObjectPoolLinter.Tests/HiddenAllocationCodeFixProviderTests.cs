@@ -644,6 +644,29 @@ public class Spawner : MonoBehaviour
             await VerifyNoFixAsync(source, Diagnostic(0), Diagnostic(1), Diagnostic(2));
         }
 
+        [Fact]
+        public async Task ForEachEnumerator_OffersNoFix()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    IList<int> hp = new List<int>();
+    IEnumerable<int> Ids() => hp;
+
+    void Update()
+    {
+        {|#0:foreach (var h in hp)|} { }
+        {|#1:foreach (var id in Ids())|} { }
+    }
+}
+";
+
+            await VerifyNoFixAsync(source, Diagnostic(0), Diagnostic(1));
+        }
+
         private sealed class Test : CodeFixTest<DefaultVerifier>
         {
             public override string Language => LanguageNames.CSharp;
