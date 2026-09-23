@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds samples/SampleUnityCode and asserts it produces exactly the expected OPL001-OPL003 warnings.
+    Builds samples/SampleUnityCode and asserts it produces exactly the expected OPL warnings.
 
 .DESCRIPTION
     The sample is the end-to-end check that the analyzers load from a ProjectReference and report
@@ -40,7 +40,9 @@ $expected = @(
     'OPL002: iterator state machine for Spawn() in Update'
     'OPL002: async state machine for SaveAsync() in Update'
     'OPL002: LINQ CountAlive() in Update'
+    'OPL002: enumerator for foreach over IReadOnlyList<int> in Update'
     'OPL003: Camera.allCameras in Update'
+    'OPL006: string field Label in LabelJob'
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -60,12 +62,20 @@ if ($exitCode -ne 0) { throw "Sample build failed with exit code $exitCode." }
 # MSBuild can echo a warning more than once; key on rule and file(line,col) to count each diagnostic once.
 # OPL001 and OPL002 read "'<allocation>' allocates inside ..."; OPL003 reads "'<api>' returns a new '<type>' on every call inside ...".
 $pattern = '^(?<location>.+?\(\d+,\d+\)): warning (?<rule>OPL\d{3}): ''(?<allocation>.+?)'' (?:allocates|returns a new ''.+?'' on every call) inside the frequently-called method ''(?<method>.+?)''\.'
+# OPL006 reads "Field '<field>' of job struct '<job>' has the reference type '<type>'.".
+$jobPattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL006: Field ''(?<field>.+?)'' of job struct ''(?<job>.+?)'' has the reference type ''(?<type>.+?)''\.'
 $byLocation = [ordered]@{}
 foreach ($line in $output) {
     $match = [regex]::Match($line, $pattern)
     if ($match.Success) {
         $key = "$($match.Groups['rule'].Value) $($match.Groups['location'].Value.Trim())"
         $byLocation[$key] = "$($match.Groups['rule'].Value): $($match.Groups['allocation'].Value) in $($match.Groups['method'].Value)"
+        continue
+    }
+    $match = [regex]::Match($line, $jobPattern)
+    if ($match.Success) {
+        $key = "OPL006 $($match.Groups['location'].Value.Trim())"
+        $byLocation[$key] = "OPL006: $($match.Groups['type'].Value) field $($match.Groups['field'].Value) in $($match.Groups['job'].Value)"
     }
 }
 $actual = @($byLocation.Values)
