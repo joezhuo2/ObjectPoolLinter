@@ -6,13 +6,14 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 ## Features
 
-- **Three rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md) for a misspelled or invalid `object_pool_linter.*` option, [OPL005](docs/rules/OPL005.md) for an `[ObjectPool]` attribute the generator cannot act on, and [OPL006](docs/rules/OPL006.md) for a Unity job struct holding a managed field, which makes `Schedule()` throw:
+- **Four rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md) for a misspelled or invalid `object_pool_linter.*` option, [OPL005](docs/rules/OPL005.md) for an `[ObjectPool]` attribute the generator cannot act on, [OPL006](docs/rules/OPL006.md) for a Unity job struct holding a managed field, which makes `Schedule()` throw, and [OPL007](docs/rules/OPL007.md) for a `NativeArray<T>` or other native container allocated with `TempJob` or `Persistent` that is not disposed on every path out of its method, or, kept in a field, never disposed by its type:
 
   | Rule | Reports | Default |
   | --- | --- | --- |
   | [OPL001](docs/rules/OPL001.md) | `new` allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` | Warning |
   | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ (including LINQ-style extension methods), boxing, iterator and `async` state machines, and `foreach` over an interface-typed collection | Info |
   | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`) and `name` / `tag` | Warning |
+  | [OPL008](docs/rules/OPL008.md) | Asset loads that belong in `Awake` or `Start`: `Resources.Load`, `Resources.LoadAsync`, `Addressables.LoadAssetAsync` and the other Addressables and `AssetReference` loads | Info |
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
@@ -77,8 +78,9 @@ each DLL in the Inspector:
    exactly that way.
 4. Click **Apply**.
 
-Unity recompiles and OPL001 and OPL003 appear in the Console. OPL002 is Info by default, which the
-Console does not show; raise it to a warning (below) to see it there.
+Unity recompiles and OPL001, OPL003 and the other warnings appear in the Console. OPL002 and OPL008
+are Info by default, which the Console does not show; raise them to a warning (below) to see them
+there.
 
 **Tested on Unity 6000.4.6f1** (Unity 6), where both artifacts import cleanly and OPL001 is reported
 during a batch-mode compile. The analyzer targets Roslyn 3.8, which Unity's documentation names as
@@ -105,6 +107,7 @@ single allocation in `#pragma warning disable <rule>`:
 [*.cs]
 dotnet_diagnostic.OPL001.severity = none      # turn OPL001 off
 dotnet_diagnostic.OPL002.severity = warning   # show OPL002 in the Unity Console
+dotnet_diagnostic.OPL008.severity = warning   # show OPL008 in the Unity Console
 ```
 
 ### Unity code compiled outside the editor
@@ -136,8 +139,8 @@ dotnet test ObjectPoolLinter.slnx -c Release
 ```
 
 The solution includes `samples/SampleUnityCode`, a small MonoBehaviour compiled against Unity stubs
-with the analyzer attached. Building the solution prints its OPL001, OPL002 and OPL003 warnings; those
-are expected. To
+with the analyzer attached. Building the solution prints its OPL001 to OPL003 and OPL006 to OPL008
+warnings; those are expected. To
 check that the sample reports exactly the warnings it should, as CI does:
 
 ```
@@ -177,7 +180,8 @@ The analyzer runs automatically during build and in IDEs that support Roslyn ana
 
 Each rule is documented in its own page, which also covers how to change its severity or suppress it:
 [OPL001](docs/rules/OPL001.md), [OPL002](docs/rules/OPL002.md), [OPL003](docs/rules/OPL003.md),
-[OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md), [OPL006](docs/rules/OPL006.md).
+[OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md), [OPL006](docs/rules/OPL006.md),
+[OPL007](docs/rules/OPL007.md), [OPL008](docs/rules/OPL008.md).
 
 Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing. Four shapes never report in the first place, because the analyzer
@@ -206,8 +210,8 @@ object_pool_linter.boxing_severity = warning
 object_pool_linter.params_severity = none
 ```
 
-The hot-method and exclusion options apply to all three rules; the `*_severity` options to OPL002
-only, and only while `dotnet_diagnostic.OPL002.severity` is not set. Names are case-sensitive, and an
+The hot-method and exclusion options apply to OPL001, OPL002, OPL003 and OPL008; the `*_severity`
+options to OPL002 only, and only while `dotnet_diagnostic.OPL002.severity` is not set. Names are case-sensitive, and an
 exclusion does not extend to derived types. A misspelled option or an unusable value is reported as
 [OPL004](docs/rules/OPL004.md) rather than silently ignored.
 
@@ -310,8 +314,8 @@ None of the three has fix-all support.
 
 ## Automatic suppressions
 
-OPL001, OPL002 and OPL003 are suppressed automatically where the allocation is known not to run every
-frame. A suppressed diagnostic still exists, carrying its justification: the IDE greys it out and the
+OPL001, OPL002, OPL003 and OPL008 are suppressed automatically where the allocation is known not to
+run every frame. A suppressed diagnostic still exists, carrying its justification: the IDE greys it out and the
 build leaves it out of the warning count.
 
 | Suppression | Suppresses an allocation that is |
@@ -477,7 +481,9 @@ captures state.)
 `IEnumerable`), boxing, calls to iterator and `async` methods, and `foreach` loops whose enumerator
 comes back through an interface (`IList<T>`, `IEnumerable<T>`, a `Transform`), and is Info by default, so
 the Unity Console does not show it until it is raised to a warning. OPL003 matches `UnityEngine`
-members that return an array, plus `name` and `tag`. Still not reported by any rule:
+members that return an array, plus `name` and `tag`. OPL008 matches `Resources.Load`,
+`Resources.LoadAsync`, `Addressables.Load*` and `AssetReference.Load*`, and is Info as well. Still
+not reported by any rule:
 
 - allocations inside base class library or Unity methods other than the ones above, and a custom
   enumerator class returned by a collection's own public `GetEnumerator()` (`foreach` over `List<T>`,
@@ -512,6 +518,15 @@ fix would have to drop it. Rewrite the initializer by hand after taking the obje
 **No pool fix releases the object.** Neither the replacement fix nor the pool-generating one inserts a
 `Return` call — handing the object back is yours to do, and a pool nothing is returned to is a leak
 with extra steps.
+
+**OPL007 follows one method's control flow, and only `new`.** A native container held in a local
+is checked on every path out of the method that allocates it; once it is returned, stored anywhere,
+passed by `ref`, handed to the project's own code or captured by a lambda, it is someone else's to
+dispose and is no longer followed. A container kept in a field counts as disposed when anything in
+its type disposes it, on any path. Containers created by a method (`ToNativeArray`,
+`CollectionHelper.CreateNativeArray`), with a non-constant allocator, or inside a lambda are not
+checked; `Allocator.Temp` never is, since Unity frees it. See
+[docs/rules/OPL007.md](docs/rules/OPL007.md#what-is-not-reported-and-why).
 
 **The suppressor is syntactic and local.** It recognizes four written-out shapes
 ([Automatic suppressions](#automatic-suppressions)). A guard behind a method call or a property, and

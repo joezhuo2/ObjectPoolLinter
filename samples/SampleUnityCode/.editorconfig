@@ -5,3 +5,5 @@ object_pool_linter.excluded_types = LoadingScreen
 
 # OPL002 defaults to Info, which the build output does not print. Raise it so the script can assert it.
 dotnet_diagnostic.OPL002.severity = warning
+# OPL008 is Info as well.
+dotnet_diagnostic.OPL008.severity = warning

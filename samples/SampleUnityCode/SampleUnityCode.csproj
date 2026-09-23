@@ -5,10 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <!-- The sample exists to produce OPL001, OPL002, OPL003 and OPL006. Keep those as warnings even when CI
+    <!-- The sample exists to produce OPL001, OPL002, OPL003 and OPL006 to OPL008. Keep those as warnings even when CI
          builds the solution with -warnaserror, so build/verify-sample.ps1 can assert them. -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);OPL001;OPL002;OPL003;OPL006</WarningsNotAsErrors>
-    <MSBuildWarningsNotAsErrors>$(MSBuildWarningsNotAsErrors);OPL001;OPL002;OPL003;OPL006</MSBuildWarningsNotAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);OPL001;OPL002;OPL003;OPL006;OPL007;OPL008</WarningsNotAsErrors>
+    <MSBuildWarningsNotAsErrors>$(MSBuildWarningsNotAsErrors);OPL001;OPL002;OPL003;OPL006;OPL007;OPL008</MSBuildWarningsNotAsErrors>
     <!-- Unity defines this in the editor. The sample defines it so the `#if UNITY_EDITOR` allocation
          in SampleBehaviour.cs is compiled, and the suppressor is exercised on real code. -->
     <DefineConstants>$(DefineConstants);UNITY_EDITOR</DefineConstants>

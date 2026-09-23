@@ -221,3 +221,31 @@ public struct LabelJob : Unity.Jobs.IJob
     {
     }
 }
+
+// 1.6.0: native containers that leak, and asset loads in Update.
+public class Radar : MonoBehaviour
+{
+    public int count;
+
+    private UnityEngine.Object _icon = null!;
+
+    void Update()
+    {
+        // OPL008 (raised to a warning in .editorconfig): the asset is looked up again every frame
+        var marker = Resources.Load<UnityEngine.Object>("Marker");
+
+        // Suppressed (OPLS004): loaded once and cached in a field
+        if (_icon == null)
+            _icon = Resources.Load<UnityEngine.Object>("Icon");
+
+        // OPL007: the early return skips Dispose, so the buffer leaks whenever count is 0
+        var hits = new Unity.Collections.NativeArray<int>(count, Unity.Collections.Allocator.TempJob);
+        if (count == 0) return;
+        hits[0] = count;
+        hits.Dispose();
+
+        // No OPL007: disposed by `using`, and Temp memory is freed by Unity at the end of the frame
+        using var scratch = new Unity.Collections.NativeArray<int>(count, Unity.Collections.Allocator.TempJob);
+        var temp = new Unity.Collections.NativeArray<int>(count, Unity.Collections.Allocator.Temp);
+    }
+}

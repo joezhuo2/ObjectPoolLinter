@@ -43,6 +43,8 @@ $expected = @(
     'OPL002: enumerator for foreach over IReadOnlyList<int> in Update'
     'OPL003: Camera.allCameras in Update'
     'OPL006: string field Label in LabelJob'
+    'OPL007: NativeArray<int> TempJob not disposed on every path in Update'
+    'OPL008: Resources.Load in Update'       # raised to a warning in .editorconfig
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -60,10 +62,13 @@ $output | Write-Host
 if ($exitCode -ne 0) { throw "Sample build failed with exit code $exitCode." }
 
 # MSBuild can echo a warning more than once; key on rule and file(line,col) to count each diagnostic once.
-# OPL001 and OPL002 read "'<allocation>' allocates inside ..."; OPL003 reads "'<api>' returns a new '<type>' on every call inside ...".
-$pattern = '^(?<location>.+?\(\d+,\d+\)): warning (?<rule>OPL\d{3}): ''(?<allocation>.+?)'' (?:allocates|returns a new ''.+?'' on every call) inside the frequently-called method ''(?<method>.+?)''\.'
+# OPL001 and OPL002 read "'<allocation>' allocates inside ..."; OPL003 reads "'<api>' returns a new '<type>' on every call inside ...";
+# OPL008 reads "'<api>' loads an asset on every call inside ...".
+$pattern = '^(?<location>.+?\(\d+,\d+\)): warning (?<rule>OPL\d{3}): ''(?<allocation>.+?)'' (?:allocates|returns a new ''.+?'' on every call|loads an asset on every call) inside the frequently-called method ''(?<method>.+?)''\.'
 # OPL006 reads "Field '<field>' of job struct '<job>' has the reference type '<type>'.".
 $jobPattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL006: Field ''(?<field>.+?)'' of job struct ''(?<job>.+?)'' has the reference type ''(?<type>.+?)''\.'
+# OPL007 reads "'<type>' allocated with Allocator.<allocator> in '<method>' is never disposed." or "... is not disposed on every path ...".
+$disposePattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL007: ''(?<type>.+?)'' allocated with Allocator\.(?<allocator>\w+) in ''(?<method>.+?)'' is (?<problem>never disposed|not disposed on every path)'
 $byLocation = [ordered]@{}
 foreach ($line in $output) {
     $match = [regex]::Match($line, $pattern)
@@ -76,6 +81,12 @@ foreach ($line in $output) {
     if ($match.Success) {
         $key = "OPL006 $($match.Groups['location'].Value.Trim())"
         $byLocation[$key] = "OPL006: $($match.Groups['type'].Value) field $($match.Groups['field'].Value) in $($match.Groups['job'].Value)"
+        continue
+    }
+    $match = [regex]::Match($line, $disposePattern)
+    if ($match.Success) {
+        $key = "OPL007 $($match.Groups['location'].Value.Trim())"
+        $byLocation[$key] = "OPL007: $($match.Groups['type'].Value) $($match.Groups['allocator'].Value) $($match.Groups['problem'].Value) in $($match.Groups['method'].Value)"
     }
 }
 $actual = @($byLocation.Values)

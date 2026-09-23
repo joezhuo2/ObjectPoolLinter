@@ -1,9 +1,9 @@
 # Automatic suppressions
 
 `ObjectPoolSuppressionAnalyzer` is a Roslyn `DiagnosticSuppressor` that ships with the analyzer. It
-reads every OPL001, OPL002 and OPL003 diagnostic the rules report and suppresses the ones sitting in
-a shape that already answers the rule: code that runs once rather than every frame, code that is not
-in a player build at all, or an object that is being cached rather than thrown away.
+reads every OPL001, OPL002, OPL003 and OPL008 diagnostic the rules report and suppresses the ones
+sitting in a shape that already answers the rule: code that runs once rather than every frame, code
+that is not in a player build at all, or an object that is being cached rather than thrown away.
 
 A suppressed diagnostic is not deleted. It stays in the compilation carrying its suppression, so the
 IDE greys it out with the justification, `-warnaserror` ignores it, and the build's warning count
@@ -21,8 +21,11 @@ Every pattern can be switched off individually from `.editorconfig`, see
 | `OPLS003` | The allocation is in the taken branch of an `if` testing a static `bool` field that the same branch assigns | Runs once |
 | `OPLS004` | The allocated object is assigned straight into a field | That is the caching the rule asks for |
 
-Each suppression id covers all three rules: `OPLS004` suppresses the OPL001 on
-`_buffer = new List<int>();` and the OPL002 on `_label = first + second;` alike.
+Each suppression id covers all four rules: `OPLS004` suppresses the OPL001 on
+`_buffer = new List<int>();`, the OPL002 on `_label = first + second;` and, since 1.6.0, the OPL008 on
+`_prefab = Resources.Load<GameObject>("Enemy");` alike. A lazy load,
+`if (_prefab == null) _prefab = Resources.Load<GameObject>("Enemy");`, is exactly the caching
+[OPL008](rules/OPL008.md) asks for.
 
 ### OPLS001: the first-frame guard
 
@@ -156,5 +159,8 @@ suppressed by a pragma stays suppressed.
 - **`Start`, `Awake` and friends.** Nothing is needed there - the rules never look at them.
 - **An allocation on a cold branch inside a hot method** (`if (hp <= 0)`), which is rare per frame
   but not provably once.
-- **A `[BurstCompile]` method**, where managed allocations are structurally impossible. That is F8 in
-  [release_plan.md](../release_plan.md), not implemented yet.
+- **A `[BurstCompile]` method**, where managed allocations are structurally impossible. There is
+  nothing to suppress: since 1.5.6 the rules do not report inside Burst-compiled code in the first
+  place (see [Burst-compiled code](rules/OPL001.md#burst-compiled-code)).
+- **OPL007, a native container not disposed.** A leak is a leak whether it happens once or every
+  frame, and assigning a container to a field is exactly what OPL007 checks the owning type for.

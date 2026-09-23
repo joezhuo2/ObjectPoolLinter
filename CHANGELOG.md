@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.0] - 2026-09-23
+
+### Added
+- **OPL007, native container not disposed** (Warning, category Reliability). A `NativeArray<T>`,
+  `NativeList<T>`, `NativeHashMap<TKey, TValue>` or any other struct marked `[NativeContainer]`,
+  created with `new` and a constant allocator other than `Allocator.Temp`, `None` or `Invalid`, is
+  reported when:
+  - held in a local, it is not disposed on every path out of the method, local function or accessor
+    that allocates it. The rule follows the method's control flow graph: each `return`, the end of
+    the method, and a loop turning back to the allocation must pass a `Dispose()` or
+    `Dispose(JobHandle)` call, a `finally` that disposes it, or a point where the container is handed
+    on. A `using` declaration or statement satisfies it outright, and a path ending in `throw` does
+    not count. The message says whether the container is never disposed or only missed on some paths;
+  - stored in a field or auto-property of its own type, nothing in that type (across every partial
+    declaration) disposes it or passes it to the project's own code;
+  - thrown away as soon as it is made.
+
+  A local that is returned, assigned anywhere, passed by `ref` or `out`, passed to a method or
+  constructor declared in source, or captured by a lambda or local function is treated as handed on.
+  A field marked `[DeallocateOnJobCompletion]`, a container created straight into another object
+  (`new MoveJob { Data = new NativeArray<int>(...) }`), and allocations inside lambdas are not
+  followed. The rule does not depend on hot paths and runs only when the compilation references
+  `NativeContainerAttribute` and `Allocator`.
+- **OPL008, asset loaded in hot path** (Info, category Performance). `Resources.Load`,
+  `Resources.Load<T>`, `Resources.LoadAsync`, `Resources.LoadAsync<T>`, every `Addressables.Load*`
+  method (`LoadAssetAsync`, `LoadAssetsAsync`, `LoadSceneAsync`, ...) and the `Load*` methods of an
+  `AssetReference` and its subclasses are reported inside a hot path, with the advice to load once in
+  `Awake` or `Start` and keep the result, or the handle, in a field. `Resources.LoadAll` stays with
+  OPL003, which already reports it for returning an array; `InstantiateAsync` is not reported. The
+  rule uses the same hot-path list, `.editorconfig` options and Burst exemption as OPL001 to OPL003.
+- The automatic suppressions now cover OPL008 as well, so a load cached in a field
+  (`if (_prefab == null) _prefab = Resources.Load<GameObject>("Enemy");`) is suppressed as `OPLS004`.
+- 22 tests, for 300 in total. `samples/SampleUnityCode` gains a `Radar` behaviour with a
+  `Resources.Load` in `Update`, a cached load the suppressor silences, a `NativeArray<int>` that an
+  early return leaks, and a `using` and a `Temp` container that stay quiet. Its `.editorconfig` raises
+  OPL008 to a warning, and `build/verify-sample.ps1` now expects 15 warnings and recognizes the OPL007
+  and OPL008 messages.
+
+### Changed
+- New pages [docs/rules/OPL007.md](docs/rules/OPL007.md) and [docs/rules/OPL008.md](docs/rules/OPL008.md).
+  [README.md](README.md), [docs/configuration.md](docs/configuration.md),
+  [docs/suppressions.md](docs/suppressions.md), [docs/rules/OPL001.md](docs/rules/OPL001.md),
+  [docs/rules/OPL003.md](docs/rules/OPL003.md), [docs/rules/OPL006.md](docs/rules/OPL006.md) and the
+  Unity package README describe the two rules. The Known limitations section gains an entry for what
+  OPL007 does not follow.
+- OPL005 and OPL006 move from `AnalyzerReleases.Unshipped.md` to `AnalyzerReleases.Shipped.md` under
+  the releases that introduced them (1.5.4 and 1.5.6), and OPL007 and OPL008 are recorded under 1.6.0.
+- No code fix is offered for OPL007 or OPL008; the rule pages list the by-hand fixes.
+
+### Fixed
+- [docs/suppressions.md](docs/suppressions.md) no longer says Burst-compiled code is unhandled; the
+  rules have skipped it since 1.5.6.
+
 ## [v1.5.6] - 2026-09-22
 
 ### Added
@@ -873,7 +926,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.6...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.0...HEAD
+[v1.6.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.6...v1.6.0
 [v1.5.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.5...v1.5.6
 [v1.5.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.4...v1.5.5
 [v1.5.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.3...v1.5.4

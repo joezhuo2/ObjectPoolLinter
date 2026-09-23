@@ -21,6 +21,12 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
 - **OPL006** (warning): a field of managed type (a class, array, `string`, or a struct holding one) in
   a job struct (`IJob`, `IJobFor`, `IJobParallelFor`, ...), which makes `Schedule()` throw
   `InvalidOperationException`.
+- **OPL007** (warning): a `NativeArray<T>`, `NativeList<T>` or other native container allocated with
+  `Allocator.TempJob` or `Allocator.Persistent` that is not disposed on every path out of its method,
+  or, kept in a field, never disposed by its type. Native memory is never garbage-collected.
+- **OPL008** (info): `Resources.Load`, `Resources.LoadAsync`, `Addressables.LoadAssetAsync` and the
+  other Addressables and `AssetReference` loads inside a hot path. Load once in `Awake` or `Start` and
+  keep the result in a field.
 
 Nothing is reported inside code Burst compiles (a `[BurstCompile]` job or static method): Burst
 rejects managed allocations itself.
@@ -75,7 +81,7 @@ ignores it; Unity's compile pipeline never loads `Microsoft.CodeAnalysis.CSharp.
 ## Configuring hot methods
 
 List extra hot methods or excluded types in a `.editorconfig` at your project root, next to
-`Assets/`. The options apply to all three rules:
+`Assets/`. The options apply to OPL001, OPL002, OPL003 and OPL008:
 
 ```ini
 [*.cs]
@@ -90,7 +96,8 @@ repository.
 
 ## Changing a rule's severity
 
-The Unity Console shows warnings and errors only, so OPL002 appears there only after it is raised.
+The Unity Console shows warnings and errors only, so OPL002 and OPL008 appear there only after they
+are raised.
 Add lines like these to a `.editorconfig` at your project root, or use `#pragma warning disable <rule>`
 around a specific allocation:
 
@@ -98,6 +105,7 @@ around a specific allocation:
 [*.cs]
 dotnet_diagnostic.OPL001.severity = none      # turn OPL001 off
 dotnet_diagnostic.OPL002.severity = warning   # show OPL002 in the Console
+dotnet_diagnostic.OPL008.severity = warning   # show OPL008 in the Console
 ```
 
 Or raise only some kinds of OPL002 (leave `dotnet_diagnostic.OPL002.severity` unset for these to

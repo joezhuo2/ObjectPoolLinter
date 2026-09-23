@@ -32,6 +32,52 @@ namespace UnityEngine
     {
         public static int frameCount => 0;
     }
+
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : Object => null!;
+    }
+}
+
+namespace Unity.Collections.LowLevel.Unsafe
+{
+    [System.AttributeUsage(System.AttributeTargets.Struct)]
+    public class NativeContainerAttribute : System.Attribute
+    {
+    }
+}
+
+namespace Unity.Collections
+{
+    public enum Allocator
+    {
+        Invalid = 0,
+        None = 1,
+        Temp = 2,
+        TempJob = 3,
+        Persistent = 4,
+    }
+
+    [Unity.Collections.LowLevel.Unsafe.NativeContainer]
+    public struct NativeArray<T> : System.IDisposable where T : struct
+    {
+        public NativeArray(int length, Allocator allocator)
+        {
+            Length = length;
+        }
+
+        public int Length { get; }
+
+        public T this[int index]
+        {
+            get => default;
+            set { }
+        }
+
+        public void Dispose()
+        {
+        }
+    }
 }
 
 namespace Unity.Burst

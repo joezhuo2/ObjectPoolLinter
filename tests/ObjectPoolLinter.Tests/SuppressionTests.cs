@@ -8,8 +8,8 @@ using Xunit;
 
 namespace ObjectPoolLinter.Tests
 {
-    // F25: ObjectPoolSuppressionAnalyzer, which suppresses OPL001, OPL002 and OPL003 where the
-    // allocation is known not to run every frame.
+    // F25: ObjectPoolSuppressionAnalyzer, which suppresses OPL001, OPL002, OPL003 and OPL008 where
+    // the allocation is known not to run every frame.
     public class SuppressionTests
     {
         private const string UnityStub = @"
@@ -372,6 +372,43 @@ public class MyBehaviour : MonoBehaviour
 ";
 
             await CreateTest<HiddenAllocationAnalyzer>(source, Hidden("string concatenation")).RunAsync();
+        }
+
+        // OPL008 asks for exactly this: load the asset once and keep it in a field.
+        [Fact]
+        public async Task AssetLoadCachedInField_IsSuppressed()
+        {
+            var source = @"
+using UnityEngine;
+
+namespace UnityEngine
+{
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : Object => null;
+    }
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    private Object _prefab;
+
+    void Update()
+    {
+        if (_prefab == null)
+            _prefab = {|#0:Resources.Load<Object>(""Enemy"")|};
+
+        var uncached = {|#1:Resources.Load<Object>(""Enemy"")|};
+    }
+}
+";
+
+            DiagnosticResult Load(int location) =>
+                new DiagnosticResult(AssetLoadAnalyzer.DiagnosticId, DiagnosticSeverity.Info)
+                    .WithLocation(location)
+                    .WithArguments("Resources.Load", "Update", "Load it once in Awake or Start and keep it in a field");
+
+            await CreateTest<AssetLoadAnalyzer>(source, Suppressed(Load(0)), Load(1)).RunAsync();
         }
 
         // --- object_pool_linter.suppressions ---

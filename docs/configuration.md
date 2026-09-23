@@ -74,9 +74,9 @@ file named `.globalconfig` in the project folder; other names are added with
 
 | Option | Value | Applies to | Added in |
 | --- | --- | --- | --- |
-| `object_pool_linter.additional_hot_methods` | Comma-separated method entries | OPL001, OPL002, OPL003 | 1.2.0; parameter lists in 1.5.2 |
-| `object_pool_linter.excluded_types` | Comma-separated type names | OPL001, OPL002, OPL003 | 1.2.0 |
-| `object_pool_linter.excluded_types_regex` | One .NET regular expression | OPL001, OPL002, OPL003 | 1.5.2 |
+| `object_pool_linter.additional_hot_methods` | Comma-separated method entries | OPL001, OPL002, OPL003, OPL008 | 1.2.0; parameter lists in 1.5.2 |
+| `object_pool_linter.excluded_types` | Comma-separated type names | OPL001, OPL002, OPL003, OPL008 | 1.2.0 |
+| `object_pool_linter.excluded_types_regex` | One .NET regular expression | OPL001, OPL002, OPL003, OPL008 | 1.5.2 |
 | `object_pool_linter.string_severity` | Severity | OPL002 | 1.5.2 |
 | `object_pool_linter.delegate_severity` | Severity | OPL002 | 1.5.2 |
 | `object_pool_linter.params_severity` | Severity | OPL002 | 1.5.2 |
@@ -85,7 +85,7 @@ file named `.globalconfig` in the project folder; other names are added with
 | `object_pool_linter.iterator_severity` | Severity | OPL002 | 1.5.5 |
 | `object_pool_linter.async_severity` | Severity | OPL002 | 1.5.5 |
 | `object_pool_linter.enumerator_severity` | Severity | OPL002 | 1.5.6 |
-| `object_pool_linter.suppressions` | Comma-separated pattern names, `all` or `none` | OPL001, OPL002, OPL003 | 1.5.4 |
+| `object_pool_linter.suppressions` | Comma-separated pattern names, `all` or `none` | OPL001, OPL002, OPL003, OPL008 | 1.5.4 |
 | `dotnet_diagnostic.OPL00N.severity` | Severity | The named rule | Standard Roslyn |
 
 A severity is one of `none`, `silent`, `suggestion`, `warning`, `error`, the same words
@@ -172,7 +172,12 @@ dotnet_diagnostic.OPL003.severity = error
 dotnet_diagnostic.OPL004.severity = warning      # default
 dotnet_diagnostic.OPL005.severity = warning      # default
 dotnet_diagnostic.OPL006.severity = warning      # default
+dotnet_diagnostic.OPL007.severity = warning      # default
+dotnet_diagnostic.OPL008.severity = warning      # default is suggestion (Info)
 ```
+
+[OPL006](rules/OPL006.md) and [OPL007](rules/OPL007.md) do not depend on hot paths, so the hot-method
+and excluded-type options do not affect them.
 
 `none` turns a rule off. For a single site, use `#pragma warning disable OPL001` or a
 `[SuppressMessage]` attribute; see *When to suppress* in each rule's page.
@@ -223,10 +228,10 @@ Each OPL002 diagnostic carries its kind in the `AllocationKind` property (`strin
 
 ## Automatic suppressions (`suppressions`)
 
-OPL001, OPL002 and OPL003 are suppressed automatically where the allocation is known not to run every
-frame: behind a `Time.frameCount == 0` guard, inside `#if UNITY_EDITOR`, behind a static `bool` latch
-the guarded branch sets, or assigned straight into a field. Each pattern can be switched off by
-listing only the ones you want:
+OPL001, OPL002, OPL003 and OPL008 are suppressed automatically where the allocation is known not to
+run every frame: behind a `Time.frameCount == 0` guard, inside `#if UNITY_EDITOR`, behind a static
+`bool` latch the guarded branch sets, or assigned straight into a field. Each pattern can be switched
+off by listing only the ones you want:
 
 ```ini
 [*.cs]
@@ -298,5 +303,5 @@ root's settings.
 - Unity's own editor compile has not been verified to pass `object_pool_linter.*` options to
   analyzers. `dotnet build`, Visual Studio, Rider and VS Code do. If the IDE reports something the
   Unity Console does not, or the other way round, that is the likely cause.
-- The Unity Console shows warnings and errors only. OPL002 is Info by default, so raise it, or some of
-  its kinds, to `warning` to see it there.
+- The Unity Console shows warnings and errors only. OPL002 and OPL008 are Info by default, so raise
+  them (or some of OPL002's kinds) to `warning` to see them there.
