@@ -1,3 +1,5 @@
+using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -601,6 +603,375 @@ public class Simulation
             await CreateTest(source, Diagnostic("string interpolation", "Tick"))
                 .WithEditorConfig("object_pool_linter.additional_hot_methods = Tick")
                 .RunAsync();
+        }
+
+        // --- LINQ-style extension methods (F4) ---
+
+        private const string SequenceExtensions = @"
+using System.Collections;
+using System.Collections.Generic;
+
+public static class SequenceExtensions
+{
+    public static IEnumerable<T> TakeEvery<T>(this IEnumerable<T> source, int step)
+    {
+        var i = 0;
+        foreach (var item in source)
+            if (i++ % step == 0) yield return item;
+    }
+
+    public static int CountAll(this IEnumerable source)
+    {
+        var count = 0;
+        foreach (var _ in source) count++;
+        return count;
+    }
+
+    public static int Last<T>(this List<T> list) => list.Count - 1;
+
+    public static int Peek<T>(this IReadOnlyList<T> list) => list.Count;
+
+    public static int CountFast<TSource, T>(this TSource source) where TSource : IEnumerable<T> => 0;
+}
+";
+
+        [Fact]
+        public async Task CustomLinqExtension_Reports()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+
+    void Update()
+    {
+        var sampled = {|#0:hp.TakeEvery(2)|};
+        var count = {|#1:hp.CountAll()|};
+        var viaStatic = {|#2:SequenceExtensions.TakeEvery(hp, 3)|};
+    }
+}
+";
+
+            var test = CreateTest(
+                source,
+                Diagnostic("LINQ TakeEvery()"),
+                Diagnostic("LINQ CountAll()", location: 1),
+                Diagnostic("LINQ TakeEvery()", location: 2));
+            test.TestState.Sources.Add(SequenceExtensions);
+            await test.RunAsync();
+        }
+
+        [Fact]
+        public async Task CustomLinqExtension_JoinsTheEnumerableChain()
+        {
+            var source = @"
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+
+    void Update()
+    {
+        var alive = {|#0:hp.Where(h => h > 0).TakeEvery(2).ToList()|};
+    }
+}
+";
+
+            var test = CreateTest(source, Diagnostic("LINQ Where().TakeEvery().ToList()"));
+            test.TestState.Sources.Add(SequenceExtensions);
+            await test.RunAsync();
+        }
+
+        [Fact]
+        public async Task ExtensionNotTakingASequenceInterface_DoesNotReport()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+
+    void Update()
+    {
+        var last = hp.Last();
+        var peek = hp.Peek();
+        var fast = hp.CountFast<List<int>, int>();
+    }
+}
+";
+
+            var test = CreateTest(source);
+            test.TestState.Sources.Add(SequenceExtensions);
+            await test.RunAsync();
+        }
+
+        // --- Iterator state machines (F5) ---
+
+        [Fact]
+        public async Task IteratorCall_Reports()
+        {
+            var source = @"
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    IEnumerator Spawn()
+    {
+        yield return null;
+    }
+
+    IEnumerable<int> Nearby()
+    {
+        yield return 1;
+        yield break;
+    }
+
+    void Update()
+    {
+        var routine = {|#0:Spawn()|};
+        foreach (var id in {|#1:Nearby()|}) { }
+
+        IEnumerable<int> Local() { yield return 2; }
+        var local = {|#2:Local()|};
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("iterator state machine for Spawn()"),
+                Diagnostic("iterator state machine for Nearby()", location: 1),
+                Diagnostic("iterator state machine for Local()", location: 2));
+        }
+
+        [Fact]
+        public async Task YieldOnlyInsideNestedFunction_IsNotAnIterator()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    int Count()
+    {
+        IEnumerable<int> Inner() { yield return 1; }
+        return 1;
+    }
+
+    void Update()
+    {
+        var count = Count();
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        [Fact]
+        public async Task IteratorCallInColdPath_DoesNotReport()
+        {
+            var source = @"
+using System.Collections;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    IEnumerator Spawn()
+    {
+        yield return null;
+    }
+
+    void Start()
+    {
+        var routine = Spawn();
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        [Fact]
+        public async Task HotMethodThatIsAnIterator_ReportsOnItsName()
+        {
+            var source = @"
+using System.Collections;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    IEnumerator {|#0:Update|}()
+    {
+        yield return null;
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("iterator state machine for Update()"));
+        }
+
+        [Fact]
+        public async Task AdditionalHotMethodThatIsAnIterator_Reports()
+        {
+            var source = @"
+using System.Collections.Generic;
+
+public class Simulation
+{
+    public IEnumerable<int> {|#0:Tick|}()
+    {
+        yield return 1;
+    }
+}
+";
+
+            await CreateTest(source, Diagnostic("iterator state machine for Tick()", "Tick"))
+                .WithEditorConfig("object_pool_linter.additional_hot_methods = Tick")
+                .RunAsync();
+        }
+
+        // --- Async state machines (F6) ---
+
+        [Fact]
+        public async Task AsyncCall_Reports()
+        {
+            var source = @"
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Saver : MonoBehaviour
+{
+    async Task SaveAsync() => await Task.Yield();
+    async ValueTask<int> CountAsync() { await Task.Yield(); return 1; }
+    async void Fire() => await Task.Yield();
+
+    void Update()
+    {
+        _ = {|#0:SaveAsync()|};
+        _ = {|#1:CountAsync()|};
+        {|#2:Fire()|};
+
+        async Task Local() => await Task.Yield();
+        _ = {|#3:Local()|};
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("async state machine for SaveAsync()"),
+                Diagnostic("async state machine for CountAsync()", location: 1),
+                Diagnostic("async state machine for Fire()", location: 2),
+                Diagnostic("async state machine for Local()", location: 3));
+        }
+
+        [Fact]
+        public async Task AsyncUpdate_ReportsOnItsName()
+        {
+            var source = @"
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Saver : MonoBehaviour
+{
+    async void {|#0:Update|}()
+    {
+        await Task.Yield();
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("async state machine for Update()"));
+        }
+
+        [Fact]
+        public async Task AsyncWithPoolingBuilder_DoesNotReport()
+        {
+            var source = @"
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Saver : MonoBehaviour
+{
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+    async ValueTask SaveAsync() => await Task.Yield();
+
+    Task NotAsync() => Task.CompletedTask;
+
+    void Update()
+    {
+        _ = SaveAsync();
+        _ = NotAsync();
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        [Fact]
+        public async Task IteratorAndAsyncMethodsFromAnotherAssembly_Report()
+        {
+            var library = await CompileLibraryAsync(@"
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+public static class Library
+{
+    public static IEnumerable<int> Ids() { yield return 1; }
+    public static async Task LoadAsync() => await Task.Yield();
+    public static Task Plain() => Task.CompletedTask;
+}
+");
+
+            var source = @"
+using UnityEngine;
+
+public class Loader : MonoBehaviour
+{
+    void Update()
+    {
+        var ids = {|#0:Library.Ids()|};
+        _ = {|#1:Library.LoadAsync()|};
+        _ = Library.Plain();
+    }
+}
+";
+
+            var test = CreateTest(
+                source,
+                Diagnostic("iterator state machine for Ids()"),
+                Diagnostic("async state machine for LoadAsync()", location: 1));
+            test.TestState.AdditionalReferences.Add(library);
+            await test.RunAsync();
+        }
+
+        private static async Task<MetadataReference> CompileLibraryAsync(string source)
+        {
+            var references = await ReferenceAssemblies.Net.Net80.ResolveAsync(LanguageNames.CSharp, CancellationToken.None);
+            var compilation = CSharpCompilation.Create(
+                "Library",
+                new[] { CSharpSyntaxTree.ParseText(source) },
+                references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            using var stream = new MemoryStream();
+            var result = compilation.Emit(stream);
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            return MetadataReference.CreateFromImage(stream.ToArray());
         }
     }
 }

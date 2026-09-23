@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -20,7 +22,7 @@ namespace ObjectPoolLinter
         private const string Category = "Performance";
         private static readonly LocalizableString Title = "Hidden allocation in hot path";
         private static readonly LocalizableString MessageFormat = "'{0}' allocates inside the frequently-called method '{1}'. Move it out of the method or cache the result.";
-        private static readonly LocalizableString Description = "String concatenation and interpolation, string.Concat, string.Format, StringBuilder.ToString, capturing lambdas, method-group delegates, implicit params arrays, LINQ and boxing all allocate without a 'new' in the source. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
+        private static readonly LocalizableString Description = "String concatenation and interpolation, string.Concat, string.Format, StringBuilder.ToString, capturing lambdas, method-group delegates, implicit params arrays, LINQ (including LINQ-style extension methods on IEnumerable<T>), boxing, and the state machines of iterator and async methods all allocate without a 'new' in the source. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
 
         internal const string HelpLinkUri = "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/docs/rules/OPL002.md";
 
@@ -41,10 +43,11 @@ namespace ObjectPoolLinter
         // member does not exist in the Roslyn 3.8 the analyzer builds against.
         private const LanguageVersion CSharp11 = (LanguageVersion)1100;
 
-        // Diagnostic property naming the kind of allocation: string, delegate, params, linq or boxing.
+        // Diagnostic property naming the kind of allocation: string, delegate, params, linq, boxing,
+        // iterator or async.
         internal const string AllocationKindProperty = "AllocationKind";
 
-        private static readonly string[] KindNames = { "string", "delegate", "params", "linq", "boxing" };
+        private static readonly string[] KindNames = { "string", "delegate", "params", "linq", "boxing", "iterator", "async" };
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
@@ -61,10 +64,7 @@ namespace ObjectPoolLinter
             var hotPaths = HotPathDetector.Create(context.Compilation);
             if (hotPaths == null) return;
 
-            var analyzer = new CompilationAnalyzer(
-                hotPaths,
-                context.Compilation.GetTypeByMetadataName("System.Linq.Enumerable"),
-                context.Compilation.GetTypeByMetadataName("System.Text.StringBuilder"));
+            var analyzer = new CompilationAnalyzer(hotPaths, context.Compilation);
 
             context.RegisterOperationAction(analyzer.AnalyzeBinary, OperationKind.Binary);
             context.RegisterOperationAction(analyzer.AnalyzeCompoundAssignment, OperationKind.CompoundAssignment);
@@ -74,6 +74,7 @@ namespace ObjectPoolLinter
             context.RegisterOperationAction(analyzer.AnalyzeInvocation, OperationKind.Invocation);
             context.RegisterOperationAction(analyzer.AnalyzeTranslatedQuery, OperationKind.TranslatedQuery);
             context.RegisterOperationAction(analyzer.AnalyzeConversion, OperationKind.Conversion);
+            context.RegisterSyntaxNodeAction(analyzer.AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
         }
 
         private sealed class CompilationAnalyzer
@@ -82,11 +83,45 @@ namespace ObjectPoolLinter
             private readonly INamedTypeSymbol? _enumerable;
             private readonly INamedTypeSymbol? _stringBuilder;
 
-            internal CompilationAnalyzer(HotPathDetector hotPaths, INamedTypeSymbol? enumerable, INamedTypeSymbol? stringBuilder)
+            // The compiler's marks on an iterator or async method compiled into another assembly. A
+            // method in source is recognised from its syntax instead, since the compiler adds these
+            // attributes only when it emits.
+            private readonly INamedTypeSymbol? _iteratorStateMachineAttribute;
+            private readonly INamedTypeSymbol? _asyncIteratorStateMachineAttribute;
+            private readonly INamedTypeSymbol? _asyncStateMachineAttribute;
+            private readonly INamedTypeSymbol? _asyncMethodBuilderAttribute;
+
+            // The return types whose async builders box the state machine: Task, Task<T>, ValueTask and
+            // ValueTask<T>. Other task-like types (UniTask, Unity's Awaitable) bring builders that pool it.
+            private readonly ImmutableHashSet<INamedTypeSymbol> _allocatingTaskTypes;
+
+            private readonly ConcurrentDictionary<IMethodSymbol, AllocationKind?> _stateMachineKinds =
+                new(SymbolEqualityComparer.Default);
+
+            internal CompilationAnalyzer(HotPathDetector hotPaths, Compilation compilation)
             {
                 _hotPaths = hotPaths;
-                _enumerable = enumerable;
-                _stringBuilder = stringBuilder;
+                _enumerable = compilation.GetTypeByMetadataName("System.Linq.Enumerable");
+                _stringBuilder = compilation.GetTypeByMetadataName("System.Text.StringBuilder");
+                _iteratorStateMachineAttribute = compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.IteratorStateMachineAttribute");
+                _asyncIteratorStateMachineAttribute = compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.AsyncIteratorStateMachineAttribute");
+                _asyncStateMachineAttribute = compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.AsyncStateMachineAttribute");
+                _asyncMethodBuilderAttribute = compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.AsyncMethodBuilderAttribute");
+
+                var taskTypes = ImmutableHashSet.CreateBuilder<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+                foreach (var name in new[]
+                {
+                    "System.Threading.Tasks.Task",
+                    "System.Threading.Tasks.Task`1",
+                    "System.Threading.Tasks.ValueTask",
+                    "System.Threading.Tasks.ValueTask`1",
+                })
+                {
+                    var type = compilation.GetTypeByMetadataName(name);
+                    if (type != null) taskTypes.Add(type);
+                }
+
+                _allocatingTaskTypes = taskTypes.ToImmutable();
             }
 
             // `a + b` on strings. Only the outermost `+` of a chain is reported, since `a + b + c`
@@ -191,6 +226,15 @@ namespace ObjectPoolLinter
                     return;
                 }
 
+                // Calling an iterator or async method creates its state machine, whatever the caller then
+                // does with the result: `StartCoroutine(Spawn())`, `foreach (var e in Nearby())`, `_ = SaveAsync()`.
+                var stateMachine = GetStateMachineKind(invocation.TargetMethod);
+                if (stateMachine != null)
+                {
+                    Report(context, invocation.Syntax, stateMachine.Value, DescribeStateMachine(stateMachine.Value, invocation.TargetMethod));
+                    return;
+                }
+
                 // A struct that does not override GetHashCode, Equals or ToString runs the object or
                 // ValueType implementation, which needs a boxed receiver. Enum.HasFlag boxes on Mono.
                 var method = invocation.TargetMethod;
@@ -233,11 +277,118 @@ namespace ObjectPoolLinter
                 Report(context, conversion.Syntax, AllocationKind.Boxing, "boxing " + Display(operand.Type) + " to " + Display(conversion.Type));
             }
 
+            // A hot method that is itself an iterator or async method: Unity (or the manager driving a
+            // custom update loop) calls it every frame, and every call creates the state machine. Reported
+            // once, on the method name, rather than on each `yield` or `await`.
+            internal void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
+            {
+                var declaration = (MethodDeclarationSyntax)context.Node;
+                if (declaration.Body == null && declaration.ExpressionBody == null) return;
+
+                if (context.SemanticModel.GetDeclaredSymbol(declaration, context.CancellationToken) is not { } method) return;
+
+                var kind = GetStateMachineKind(method);
+                if (kind == null) return;
+
+                var diagnostic = CreateDiagnostic(
+                    declaration.ParameterList,
+                    declaration.Identifier.GetLocation(),
+                    context.SemanticModel,
+                    context.Options,
+                    kind.Value,
+                    DescribeStateMachine(kind.Value, method),
+                    context.CancellationToken);
+                if (diagnostic != null) context.ReportDiagnostic(diagnostic);
+            }
+
+            // System.Linq.Enumerable, and extension methods from any other class that take the sequence
+            // as IEnumerable<T> or IEnumerable the way Enumerable does (MoreLINQ, a project's own
+            // `WhereAlive()`): enumerating through the interface boxes a List<T> or array enumerator, and
+            // a lazy operator allocates its own iterator on top.
             private bool IsLinqCall(IInvocationOperation invocation)
             {
-                return _enumerable != null
-                    && SymbolEqualityComparer.Default.Equals(invocation.TargetMethod.ContainingType, _enumerable)
-                    && invocation.TargetMethod.Name != "Empty";
+                var method = invocation.TargetMethod;
+
+                if (_enumerable != null && SymbolEqualityComparer.Default.Equals(method.ContainingType, _enumerable))
+                    return method.Name != "Empty";
+
+                return method.IsExtensionMethod
+                    && method.Parameters.Length > 0
+                    && IsSequenceInterface(method.Parameters[0].Type);
+            }
+
+            private static bool IsSequenceInterface(ITypeSymbol type)
+            {
+                return type.SpecialType == SpecialType.System_Collections_IEnumerable
+                    || type.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T;
+            }
+
+            // Iterator when the method uses `yield`, Async for an async method whose builder boxes the
+            // state machine; null otherwise. Cached, since a method in source is recognised by walking its
+            // body.
+            private AllocationKind? GetStateMachineKind(IMethodSymbol method)
+            {
+                method = method.PartialImplementationPart ?? method.OriginalDefinition;
+                return _stateMachineKinds.GetOrAdd(method, ComputeStateMachineKind);
+            }
+
+            private AllocationKind? ComputeStateMachineKind(IMethodSymbol method)
+            {
+                var declarations = method.DeclaringSyntaxReferences;
+                if (!declarations.IsEmpty)
+                {
+                    if (declarations.Any(reference => ContainsYield(reference.GetSyntax()))) return AllocationKind.Iterator;
+                    return method.IsAsync && HasAllocatingAsyncBuilder(method) ? AllocationKind.Async : null;
+                }
+
+                foreach (var attribute in method.GetAttributes())
+                {
+                    var attributeClass = attribute.AttributeClass;
+                    if (attributeClass == null) continue;
+
+                    if (SymbolEqualityComparer.Default.Equals(attributeClass, _iteratorStateMachineAttribute) ||
+                        SymbolEqualityComparer.Default.Equals(attributeClass, _asyncIteratorStateMachineAttribute))
+                        return AllocationKind.Iterator;
+
+                    if (SymbolEqualityComparer.Default.Equals(attributeClass, _asyncStateMachineAttribute))
+                        return HasAllocatingAsyncBuilder(method) ? AllocationKind.Async : null;
+                }
+
+                return null;
+            }
+
+            // A `yield` belonging to this method's body, not to a local function or lambda inside it.
+            private static bool ContainsYield(SyntaxNode declaration)
+            {
+                var body = declaration switch
+                {
+                    MethodDeclarationSyntax method => method.Body,
+                    LocalFunctionStatementSyntax localFunction => localFunction.Body,
+                    _ => null,
+                };
+                if (body == null) return false;
+
+                return body
+                    .DescendantNodes(node => node is not (LocalFunctionStatementSyntax or AnonymousFunctionExpressionSyntax))
+                    .OfType<YieldStatementSyntax>()
+                    .Any();
+            }
+
+            // `async void` and the Task / ValueTask family. A method-level [AsyncMethodBuilder] swaps in
+            // another builder, typically a pooling one.
+            private bool HasAllocatingAsyncBuilder(IMethodSymbol method)
+            {
+                if (_asyncMethodBuilderAttribute != null &&
+                    method.GetAttributes().Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, _asyncMethodBuilderAttribute)))
+                    return false;
+
+                return method.ReturnsVoid
+                    || method.ReturnType is INamedTypeSymbol returnType && _allocatingTaskTypes.Contains(returnType.OriginalDefinition);
+            }
+
+            private static string DescribeStateMachine(AllocationKind kind, IMethodSymbol method)
+            {
+                return (kind == AllocationKind.Iterator ? "iterator" : "async") + " state machine for " + method.Name + "()";
             }
 
             // True when the operation is the source of an enclosing LINQ call, so the chain is reported
@@ -357,11 +508,26 @@ namespace ObjectPoolLinter
                 var semanticModel = context.Operation.SemanticModel;
                 if (semanticModel == null) return;
 
-                var severity = _hotPaths.GetOptions(node.SyntaxTree, context.Options).GetSeverity(kind);
-                if (severity == ReportDiagnostic.Suppress) return;
+                var diagnostic = CreateDiagnostic(node, node.GetLocation(), semanticModel, context.Options, kind, allocation, context.CancellationToken);
+                if (diagnostic != null) context.ReportDiagnostic(diagnostic);
+            }
 
-                if (!_hotPaths.TryGetHotPathMethod(node, semanticModel, context.Options, context.CancellationToken, out var methodName))
-                    return;
+            // Null when the kind is switched off or `node` does not run on a hot path. The diagnostic is
+            // placed at `location`, which is normally `node`'s own.
+            private Diagnostic? CreateDiagnostic(
+                SyntaxNode node,
+                Location location,
+                SemanticModel semanticModel,
+                AnalyzerOptions options,
+                AllocationKind kind,
+                string allocation,
+                CancellationToken cancellationToken)
+            {
+                var severity = _hotPaths.GetOptions(node.SyntaxTree, options).GetSeverity(kind);
+                if (severity == ReportDiagnostic.Suppress) return null;
+
+                if (!_hotPaths.TryGetHotPathMethod(node, semanticModel, options, cancellationToken, out var methodName))
+                    return null;
 
                 var properties = ImmutableDictionary<string, string?>.Empty.Add(AllocationKindProperty, KindNames[(int)kind]);
                 var effectiveSeverity = severity switch
@@ -373,8 +539,8 @@ namespace ObjectPoolLinter
                     _ => Rule.DefaultSeverity,
                 };
 
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Rule, node.GetLocation(), effectiveSeverity, additionalLocations: null, properties, allocation, methodName));
+                return Diagnostic.Create(
+                    Rule, location, effectiveSeverity, additionalLocations: null, properties, allocation, methodName);
             }
         }
     }

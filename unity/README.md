@@ -7,7 +7,8 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
   through an object pool.
 - **OPL002** (info): string concatenation and interpolation, `string.Concat`, `string.Format`,
   `StringBuilder.ToString()`, capturing lambdas, method-group delegates,
-  implicit `params` arrays, LINQ and boxing, with code fixes that cache lambdas and delegates in
+  implicit `params` arrays, LINQ (including LINQ-style extension methods on `IEnumerable<T>`),
+  boxing, and calls to iterator and `async` methods, with code fixes that cache lambdas and delegates in
   `Awake()`, build interpolated strings with a reused `StringBuilder`, and turn simple LINQ chains into
   a loop.
 - **OPL003** (warning): Unity APIs that return a new array, such as `GetComponentsInChildren<T>()`,
@@ -99,6 +100,7 @@ apply):
 [*.cs]
 object_pool_linter.linq_severity = warning
 object_pool_linter.boxing_severity = warning
+object_pool_linter.iterator_severity = warning   # coroutines started every frame
 ```
 
 Installing, upgrading and pinning this package through the Package Manager, and why its asset GUIDs

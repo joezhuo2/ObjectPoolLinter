@@ -343,6 +343,40 @@ public class Spawner : MonoBehaviour
                 .RunAsync();
         }
 
+        [Fact]
+        public async Task KindSeverity_IteratorAndAsync()
+        {
+            var source = @"
+using System.Collections;
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    IEnumerator Spawn() { yield return null; }
+    async Task SaveAsync() => await Task.Yield();
+
+    void Update()
+    {
+        var routine = {|#0:Spawn()|};
+        _ = {|#1:SaveAsync()|};
+    }
+}
+";
+
+            await CreateTest<HiddenAllocationAnalyzer>(
+                    source,
+                    "object_pool_linter.iterator_severity = warning\nobject_pool_linter.async_severity = error",
+                    Hidden("iterator state machine for Spawn()", DiagnosticSeverity.Warning, 0),
+                    Hidden("async state machine for SaveAsync()", DiagnosticSeverity.Error, 1))
+                .RunAsync();
+
+            await CreateTest<HiddenAllocationAnalyzer>(
+                    source.Replace("{|#0:", "").Replace("{|#1:", "").Replace("()|}", "()"),
+                    "object_pool_linter.iterator_severity = none\nobject_pool_linter.async_severity = none")
+                .RunAsync();
+        }
+
         // --- OPL004 ---
 
         private const string AnySource = @"
@@ -371,6 +405,8 @@ public class Anything { }
                     @"object_pool_linter.excluded_types_regex = ^Game\.Debug\." + "\n" +
                     "object_pool_linter.linq_severity = warning\n" +
                     "object_pool_linter.string_severity = default\n" +
+                    "object_pool_linter.iterator_severity = warning\n" +
+                    "object_pool_linter.async_severity = none\n" +
                     "dotnet_diagnostic.OPL002.severity = warning\n" +
                     "indent_style = space")
                 .RunAsync();

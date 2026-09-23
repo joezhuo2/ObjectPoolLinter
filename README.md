@@ -11,7 +11,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
   | Rule | Reports | Default |
   | --- | --- | --- |
   | [OPL001](docs/rules/OPL001.md) | `new` allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` | Warning |
-  | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ, and boxing | Info |
+  | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ (including LINQ-style extension methods), boxing, and iterator and `async` state machines | Info |
   | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`) and `name` / `tag` | Warning |
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
@@ -198,7 +198,7 @@ object_pool_linter.additional_hot_methods = Tick(float), Simulate, OnPreCull, En
 object_pool_linter.excluded_types = LoadingScreen, Game.Editor.GizmoDrawer
 object_pool_linter.excluded_types_regex = ^Game\.Debug\.
 
-# OPL002 severity per kind of allocation: string, delegate, params, linq, boxing.
+# OPL002 severity per kind of allocation: string, delegate, params, linq, boxing, iterator, async.
 object_pool_linter.linq_severity = warning
 object_pool_linter.boxing_severity = warning
 object_pool_linter.params_severity = none
@@ -458,7 +458,9 @@ offers a fix only when that fix cannot change behaviour. The gaps below are know
 this version, not bugs.
 
 **Only allocations written directly in the message body are reported.** There is no call-graph
-analysis, so `void Update() { Spawn(); }` is silent no matter what `Spawn()` allocates. An allocation
+analysis, so `void Update() { Spawn(); }` is silent no matter what `Spawn()` allocates. The one
+exception is a call to an iterator or `async` method, which OPL002 reports because the call itself
+creates the state machine; what the method allocates in its own body is still not followed. An allocation
 inside a lambda or an anonymous method is attributed to whoever invokes the delegate, not to the
 message, so it is reported only when the lambda is invoked in place; a local function is reported
 only when the declaring body actually calls it. Converting either to a delegate — registering it as a
@@ -468,12 +470,17 @@ captures state.)
 
 **Each rule covers one family of allocation.** OPL001 matches `new` expressions and
 `UnityEngine.Object.Instantiate`. OPL002 matches string concatenation and interpolation,
-`string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ and boxing, and is Info by default, so
+`string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ
+(`System.Linq.Enumerable` and extension methods from other classes that take `IEnumerable<T>` or
+`IEnumerable`), boxing, and calls to iterator and `async` methods, and is Info by default, so
 the Unity Console does not show it until it is raised to a warning. OPL003 matches `UnityEngine`
 members that return an array, plus `name` and `tag`. Still not reported by any rule:
 
-- iterator and `async` state machines, `foreach` over an interface-typed collection (which boxes the
-  enumerator), and allocations inside base class library or Unity methods other than the ones above;
+- `foreach` over an interface-typed collection (which boxes the enumerator), and allocations inside
+  base class library or Unity methods other than the ones above;
+- iterator property getters, iterator and `async` methods in assemblies referenced only as reference
+  assemblies (which drop the compiler's state-machine attributes), and `async` methods returning a
+  pooled task-like type such as UniTask or `Awaitable`, which is deliberate;
 - `new int?()` (which boxes to null) and boxing of an unconstrained generic `T`, which depends on the
   type argument at run time;
 - Unity APIs that cost CPU time without allocating, such as `GameObject.Find` and `GetComponent<T>()`;

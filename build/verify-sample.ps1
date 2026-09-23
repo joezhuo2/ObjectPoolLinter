@@ -37,6 +37,9 @@ $expected = @(
     'OPL001: new int[] in FixedUpdate'
     'OPL001: new List<float> in Tick'      # from samples/SampleUnityCode/.editorconfig
     'OPL002: string interpolation in Update' # raised to a warning in .editorconfig
+    'OPL002: iterator state machine for Spawn() in Update'
+    'OPL002: async state machine for SaveAsync() in Update'
+    'OPL002: LINQ CountAlive() in Update'
     'OPL003: Camera.allCameras in Update'
 )
 

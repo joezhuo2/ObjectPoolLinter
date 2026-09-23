@@ -141,3 +141,43 @@ public class Turret : MonoBehaviour
         BulletPool.Return(bullet);
     }
 }
+
+// OPL002 also covers state machines and LINQ-style extensions (1.5.5). Each call below allocates
+// every frame even though no `new` appears in Update.
+public class Wave : MonoBehaviour
+{
+    readonly System.Collections.Generic.List<int> _hp = new();
+
+    System.Collections.IEnumerator Spawn()
+    {
+        yield return null;
+    }
+
+    async System.Threading.Tasks.Task SaveAsync()
+    {
+        await System.Threading.Tasks.Task.Yield();
+    }
+
+    void Update()
+    {
+        // OPL002: calling an iterator creates its state machine
+        var routine = Spawn();
+
+        // OPL002: so does calling an async method
+        _ = SaveAsync();
+
+        // OPL002: a LINQ-style extension on IEnumerable<T> enumerates through the interface
+        var alive = _hp.CountAlive();
+    }
+}
+
+public static class SequenceExtensions
+{
+    public static int CountAlive(this System.Collections.Generic.IEnumerable<int> source)
+    {
+        var count = 0;
+        foreach (var hp in source)
+            if (hp > 0) count++;
+        return count;
+    }
+}

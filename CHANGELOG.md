@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.5.5] - 2026-09-22
+
+### Added
+- **OPL002 reports LINQ-style extension methods.** An extension method from any class whose `this`
+  parameter is `IEnumerable<T>` or `IEnumerable` (MoreLINQ, a project's own `WhereAlive()`) is
+  reported like `System.Linq.Enumerable`: it enumerates through the interface, boxing a `List<T>` or
+  array enumerator. Such calls join an `Enumerable` chain, so `hp.Where(...).TakeEvery(2).ToList()`
+  is reported once, as `LINQ Where().TakeEvery().ToList()`, and they fall under
+  `object_pool_linter.linq_severity`. Extensions on `List<T>`, arrays, `IReadOnlyList<T>` or a
+  generic `TSource` constrained to `IEnumerable<T>` are not LINQ-style and stay quiet.
+- **OPL002 reports iterator state machines.** Calling a method that uses `yield return` or
+  `yield break` in a hot path creates its state machine on every call, and is reported at the call as
+  `iterator state machine for Spawn()`: a coroutine started every frame, a `foreach` over an iterator
+  method, a local iterator function. A hot method that is itself an iterator (an
+  `additional_hot_methods` entry that yields) is reported once, on its name. A `yield` inside a
+  nested lambda or local function belongs to that function, not to the method around it.
+- **OPL002 reports async state machines.** Calling an `async` method that returns `void`, `Task`,
+  `Task<T>`, `ValueTask` or `ValueTask<T>` in a hot path is reported as
+  `async state machine for SaveAsync()`, and `async void Update()` is reported on its name. Methods
+  returning another task-like type (UniTask, Unity's `Awaitable`) or marked
+  `[AsyncMethodBuilder(...)]` bring a pooling builder and are not reported.
+- Methods compiled into other assemblies are recognized by the `[IteratorStateMachine]`,
+  `[AsyncIteratorStateMachine]` and `[AsyncStateMachine]` attributes the compiler emits; methods in
+  source by their syntax.
+- **`object_pool_linter.iterator_severity` and `object_pool_linter.async_severity`**, per-kind
+  severities for the two new kinds. Diagnostics carry `AllocationKind` = `iterator` or `async`.
+- 14 tests, for 257 in total, including one that compiles a library to metadata to prove the
+  attribute path. `samples/SampleUnityCode` gains a `Wave` behaviour with an iterator call, an async
+  call and a LINQ-style extension in `Update`; `build/verify-sample.ps1` now expects 11 warnings.
+
+### Changed
+- [README.md](README.md), [docs/rules/OPL002.md](docs/rules/OPL002.md),
+  [docs/configuration.md](docs/configuration.md) and the Unity package README describe the three new
+  detections, the two new options, and what stays unreported (iterator property getters, reference
+  assemblies that drop the state-machine attributes, pooled task-like types). The Known limitations
+  section no longer lists iterator and `async` state machines as invisible.
+- No code fix is offered for the new detections; the OPL002 rule page lists the by-hand fixes.
+
 ## [v1.5.4] - 2026-09-21
 
 ### Added
@@ -792,7 +830,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.4...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.5...HEAD
+[v1.5.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.4...v1.5.5
 [v1.5.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.3...v1.5.4
 [v1.5.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.2...v1.5.3
 [v1.5.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.1...v1.5.2

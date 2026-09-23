@@ -612,6 +612,38 @@ public class Hud : MonoBehaviour
             await VerifyNoFixAsync(source);
         }
 
+        [Fact]
+        public async Task StateMachinesAndCustomLinq_OfferNoFix()
+        {
+            var source = @"
+using System.Collections;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using UnityEngine;
+
+public static class SequenceExtensions
+{
+    public static List<T> Collect<T>(this IEnumerable<T> source) => new List<T>(source);
+}
+
+public class Spawner : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+
+    IEnumerator Spawn() { yield return null; }
+
+    async void {|#0:Update|}()
+    {
+        var routine = {|#1:Spawn()|};
+        var copy = {|#2:hp.Collect()|};
+        await Task.Yield();
+    }
+}
+";
+
+            await VerifyNoFixAsync(source, Diagnostic(0), Diagnostic(1), Diagnostic(2));
+        }
+
         private sealed class Test : CodeFixTest<DefaultVerifier>
         {
             public override string Language => LanguageNames.CSharp;
