@@ -42,9 +42,11 @@ $expected = @(
     'OPL002: LINQ CountAlive() in Update'
     'OPL002: enumerator for foreach over IReadOnlyList<int> in Update'
     'OPL003: Camera.allCameras in Update'
+    'OPL003: Renderer.sharedMaterials in Update'
     'OPL006: string field Label in LabelJob'
     'OPL007: NativeArray<int> TempJob not disposed on every path in Update'
     'OPL008: Resources.Load in Update'       # raised to a warning in .editorconfig
+    'OPL009: Component.GetComponent in Update' # raised to a warning in .editorconfig
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -63,8 +65,8 @@ if ($exitCode -ne 0) { throw "Sample build failed with exit code $exitCode." }
 
 # MSBuild can echo a warning more than once; key on rule and file(line,col) to count each diagnostic once.
 # OPL001 and OPL002 read "'<allocation>' allocates inside ..."; OPL003 reads "'<api>' returns a new '<type>' on every call inside ...";
-# OPL008 reads "'<api>' loads an asset on every call inside ...".
-$pattern = '^(?<location>.+?\(\d+,\d+\)): warning (?<rule>OPL\d{3}): ''(?<allocation>.+?)'' (?:allocates|returns a new ''.+?'' on every call|loads an asset on every call) inside the frequently-called method ''(?<method>.+?)''\.'
+# OPL008 reads "'<api>' loads an asset on every call inside ..."; OPL009 reads "'<api>' looks up a component (or searches the scene) on every call inside ...".
+$pattern = '^(?<location>.+?\(\d+,\d+\)): warning (?<rule>OPL\d{3}): ''(?<allocation>.+?)'' (?:allocates|returns a new ''.+?'' on every call|loads an asset on every call|looks up a component on every call|searches the scene on every call) inside the frequently-called method ''(?<method>.+?)''\.'
 # OPL006 reads "Field '<field>' of job struct '<job>' has the reference type '<type>'.".
 $jobPattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL006: Field ''(?<field>.+?)'' of job struct ''(?<job>.+?)'' has the reference type ''(?<type>.+?)''\.'
 # OPL007 reads "'<type>' allocated with Allocator.<allocator> in '<method>' is never disposed." or "... is not disposed on every path ...".

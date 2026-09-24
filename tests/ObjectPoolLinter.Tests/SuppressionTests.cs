@@ -411,6 +411,43 @@ public class MyBehaviour : MonoBehaviour
             await CreateTest<AssetLoadAnalyzer>(source, Suppressed(Load(0)), Load(1)).RunAsync();
         }
 
+        // OPL009 asks for the same: look the object up once and keep it in a field.
+        [Fact]
+        public async Task LookupCachedInField_IsSuppressed()
+        {
+            var source = @"
+using UnityEngine;
+
+namespace UnityEngine
+{
+    public class GameObject : Object
+    {
+        public static GameObject Find(string name) => null;
+    }
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    private GameObject _player;
+
+    void Update()
+    {
+        if (_player == null)
+            _player = {|#0:GameObject.Find(""Player"")|};
+
+        var uncached = {|#1:GameObject.Find(""Player"")|};
+    }
+}
+";
+
+            DiagnosticResult Find(int location) =>
+                new DiagnosticResult(ComponentLookupAnalyzer.DiagnosticId, DiagnosticSeverity.Info)
+                    .WithLocation(location)
+                    .WithArguments("GameObject.Find", "searches the scene", "Update", "Find it once in Awake or Start and keep it in a field");
+
+            await CreateTest<ComponentLookupAnalyzer>(source, Suppressed(Find(0)), Find(1)).RunAsync();
+        }
+
         // --- object_pool_linter.suppressions ---
 
         [Fact]

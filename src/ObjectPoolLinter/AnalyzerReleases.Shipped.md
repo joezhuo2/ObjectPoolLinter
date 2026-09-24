@@ -50,3 +50,11 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 OPL007 | Reliability | Warning | Reports a native container allocated with `Allocator.TempJob` or `Persistent` that is not disposed on every path out of its method, or, kept in a field, never disposed by its type.
 OPL008 | Performance | Info | Reports `Resources.Load` and Addressables `Load*` calls inside frequently-invoked methods.
+
+## Release 1.6.1
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
+OPL009 | Performance | Info | Reports `GetComponent`, `TryGetComponent`, `GetComponentInChildren`/`InParent` on the same object, and `GameObject.Find`, `FindWithTag` and `FindObjectOfType` inside frequently-invoked methods.

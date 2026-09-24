@@ -11,7 +11,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace ObjectPoolLinter
 {
     /// <summary>
-    /// Suppresses OPL001, OPL002, OPL003 and OPL008 where the allocation is known not to run every frame:
+    /// Suppresses OPL001, OPL002, OPL003, OPL008 and OPL009 where the allocation is known not to run every frame:
     /// behind a first-frame guard, inside <c>#if UNITY_EDITOR</c>, behind a static boolean latch the
     /// guarded code sets, or assigned straight into a field, which is the caching the rules ask for.
     /// Each pattern can be switched off with <c>object_pool_linter.suppressions</c>.
@@ -32,7 +32,8 @@ namespace ObjectPoolLinter
             ObjectPoolAnalyzer.DiagnosticId,
             HiddenAllocationAnalyzer.DiagnosticId,
             UnityApiAllocationAnalyzer.DiagnosticId,
-            AssetLoadAnalyzer.DiagnosticId);
+            AssetLoadAnalyzer.DiagnosticId,
+            ComponentLookupAnalyzer.DiagnosticId);
 
         private static readonly ImmutableArray<(SuppressionKind Kind, string Id, string Justification)> Patterns =
             ImmutableArray.Create(

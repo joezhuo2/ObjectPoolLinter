@@ -14,7 +14,7 @@ namespace ObjectPoolLinter
         private const string Category = "Performance";
         private static readonly LocalizableString Title = "Allocating Unity API in hot path";
         private static readonly LocalizableString MessageFormat = "'{0}' returns a new '{1}' on every call inside the frequently-called method '{2}'. Use a non-allocating overload or cache the result.";
-        private static readonly LocalizableString Description = "Unity engine methods and properties that return arrays copy them out of native memory on every call, and Object.name and tag build a new string each time. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
+        private static readonly LocalizableString Description = "Unity engine methods and properties that return arrays copy them out of native memory on every call, and Object.name, tag, Application.dataPath and a few other members build a new string or object each time. Inside frequently-invoked Unity methods (such as Update) that garbage builds up every frame.";
 
         internal const string HelpLinkUri = "https://github.com/joezhuo2/ObjectPoolLinter/blob/main/docs/rules/OPL003.md";
 
@@ -59,19 +59,22 @@ namespace ObjectPoolLinter
                 _hotPaths = hotPaths;
             }
 
-            // `GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Object.FindObjectsOfType`. Overloads
-            // that fill a caller-supplied List<T> or array return void or int and are not matched.
+            // `GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Object.FindObjectsOfType`,
+            // `Animator.GetParameter`. Overloads that fill a caller-supplied List<T> or array return void
+            // or int and are not matched.
             internal void AnalyzeInvocation(OperationAnalysisContext context)
             {
                 var invocation = (IInvocationOperation)context.Operation;
                 var method = invocation.TargetMethod;
 
-                if (method.ReturnType is not IArrayTypeSymbol || !IsEngineMember(method)) return;
+                if (!IsEngineMember(method)) return;
+                if (method.ReturnType is not IArrayTypeSymbol && !IsKnownAllocatingMethod(method)) return;
 
                 Report(context, invocation.Syntax, method, method.ReturnType);
             }
 
-            // `Camera.allCameras`, `Input.touches`, `mesh.vertices`, `renderer.materials`, `name`, `tag`.
+            // `Camera.allCameras`, `Input.touches`, `mesh.vertices`, `renderer.materials`,
+            // `renderer.sharedMaterials` (a copy of the array, though not of the materials), `name`, `tag`.
             // Writing the property (`mesh.vertices = buffer`) allocates nothing and is not matched.
             internal void AnalyzePropertyReference(OperationAnalysisContext context)
             {
@@ -80,30 +83,52 @@ namespace ObjectPoolLinter
 
                 var property = reference.Property;
                 if (!IsEngineMember(property)) return;
-                if (property.Type is not IArrayTypeSymbol && !IsAllocatingStringProperty(property)) return;
+                if (property.Type is not IArrayTypeSymbol && !IsKnownAllocatingProperty(property)) return;
 
                 Report(context, reference.Syntax, property, property.Type);
             }
 
-            // Only the core `UnityEngine` namespace, where members are bindings to native code. Managed
-            // packages under `UnityEngine.UI` and friends return their own fields without copying.
+            // The core `UnityEngine` namespace, and `UnityEngine.SceneManagement` and `UnityEngine.AI`,
+            // where members are bindings to native code. Managed packages under `UnityEngine.UI` and
+            // friends return their own fields without copying.
             private static bool IsEngineMember(ISymbol member)
             {
                 var ns = member.ContainingType?.ContainingNamespace;
+                if (ns == null) return false;
+
+                if (ns.Name is "SceneManagement" or "AI") ns = ns.ContainingNamespace;
+
                 return ns != null
                     && ns.Name.Equals("UnityEngine", System.StringComparison.Ordinal)
                     && ns.ContainingNamespace is { IsGlobalNamespace: true };
             }
 
-            private static bool IsAllocatingStringProperty(IPropertySymbol property)
+            // Getters that build a new string or object on every read. `Application.dataPath` and the
+            // other paths, and `Scene.name` and `path`, are marshalled from native strings each time;
+            // `NavMeshAgent.path` copies the agent's path into a new NavMeshPath.
+            private static bool IsKnownAllocatingProperty(IPropertySymbol property)
             {
-                if (property.Type.SpecialType != SpecialType.System_String) return false;
-
                 var typeName = property.ContainingType.Name;
                 return property.Name switch
                 {
-                    "name" => typeName == "Object",
+                    "name" => typeName is "Object" or "Scene",
                     "tag" => typeName is "Component" or "GameObject",
+                    "dataPath" or "persistentDataPath" or "streamingAssetsPath" or "temporaryCachePath" => typeName == "Application",
+                    "path" => typeName is "Scene" or "NavMeshAgent",
+                    _ => false,
+                };
+            }
+
+            // `Animator.GetParameter(i)` reads `parameters`, a new array, and returns one element of it.
+            // `Animator.GetLayerName` and `JsonUtility.ToJson` build a new string, and
+            // `JsonUtility.FromJson` a new object (`FromJsonOverwrite` fills an existing one).
+            private static bool IsKnownAllocatingMethod(IMethodSymbol method)
+            {
+                var typeName = method.ContainingType.Name;
+                return method.Name switch
+                {
+                    "GetParameter" or "GetLayerName" => typeName == "Animator",
+                    "ToJson" or "FromJson" => typeName == "JsonUtility",
                     _ => false,
                 };
             }

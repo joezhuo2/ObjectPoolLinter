@@ -1,8 +1,8 @@
 # Automatic suppressions
 
 `ObjectPoolSuppressionAnalyzer` is a Roslyn `DiagnosticSuppressor` that ships with the analyzer. It
-reads every OPL001, OPL002, OPL003 and OPL008 diagnostic the rules report and suppresses the ones
-sitting in a shape that already answers the rule: code that runs once rather than every frame, code
+reads every OPL001, OPL002, OPL003, OPL008 and OPL009 diagnostic the rules report and suppresses the
+ones sitting in a shape that already answers the rule: code that runs once rather than every frame, code
 that is not in a player build at all, or an object that is being cached rather than thrown away.
 
 A suppressed diagnostic is not deleted. It stays in the compilation carrying its suppression, so the
@@ -21,11 +21,12 @@ Every pattern can be switched off individually from `.editorconfig`, see
 | `OPLS003` | The allocation is in the taken branch of an `if` testing a static `bool` field that the same branch assigns | Runs once |
 | `OPLS004` | The allocated object is assigned straight into a field | That is the caching the rule asks for |
 
-Each suppression id covers all four rules: `OPLS004` suppresses the OPL001 on
+Each suppression id covers all five rules: `OPLS004` suppresses the OPL001 on
 `_buffer = new List<int>();`, the OPL002 on `_label = first + second;` and, since 1.6.0, the OPL008 on
 `_prefab = Resources.Load<GameObject>("Enemy");` alike. A lazy load,
 `if (_prefab == null) _prefab = Resources.Load<GameObject>("Enemy");`, is exactly the caching
-[OPL008](rules/OPL008.md) asks for.
+[OPL008](rules/OPL008.md) asks for. Since 1.6.1 the same goes for [OPL009](rules/OPL009.md):
+`_body = GetComponent<Rigidbody>();`, lazily or not, is suppressed.
 
 ### OPLS001: the first-frame guard
 

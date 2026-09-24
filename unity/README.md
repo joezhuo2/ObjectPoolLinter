@@ -13,7 +13,8 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
   `Awake()`, build interpolated strings with a reused `StringBuilder`, and turn simple LINQ chains into
   a loop.
 - **OPL003** (warning): Unity APIs that return a new array, such as `GetComponentsInChildren<T>()`,
-  `Physics.RaycastAll` and `Camera.allCameras`, plus `name` and `tag`, with code fixes that turn
+  `Physics.RaycastAll`, `Camera.allCameras` and `Renderer.sharedMaterials`, plus `name`, `tag`,
+  `Application.dataPath`, `Scene.name`, `NavMeshAgent.path` and a few others, with code fixes that turn
   `tag ==` into `CompareTag()`, fill a reused list with `GetComponents*<T>(List<T>)`, and read
   `Input.touches` through `Input.touchCount` and `Input.GetTouch(i)`.
 - **OPL005** (warning): a class marked `[ObjectPool]` that the source generator cannot write a pool
@@ -27,6 +28,9 @@ A Roslyn analyzer that flags allocations inside Unity hot paths (`Update`, `Fixe
 - **OPL008** (info): `Resources.Load`, `Resources.LoadAsync`, `Addressables.LoadAssetAsync` and the
   other Addressables and `AssetReference` loads inside a hot path. Load once in `Awake` or `Start` and
   keep the result in a field.
+- **OPL009** (info): `GetComponent<T>()`, `TryGetComponent`, `GetComponentInChildren` and
+  `GetComponentInParent` on the same object, and `GameObject.Find`, `FindWithTag` and
+  `FindObjectOfType`, inside a hot path. Look it up once in `Awake` or `Start` and keep it in a field.
 
 Nothing is reported inside code Burst compiles (a `[BurstCompile]` job or static method): Burst
 rejects managed allocations itself.
@@ -81,7 +85,7 @@ ignores it; Unity's compile pipeline never loads `Microsoft.CodeAnalysis.CSharp.
 ## Configuring hot methods
 
 List extra hot methods or excluded types in a `.editorconfig` at your project root, next to
-`Assets/`. The options apply to OPL001, OPL002, OPL003 and OPL008:
+`Assets/`. The options apply to OPL001, OPL002, OPL003, OPL008 and OPL009:
 
 ```ini
 [*.cs]
@@ -96,8 +100,8 @@ repository.
 
 ## Changing a rule's severity
 
-The Unity Console shows warnings and errors only, so OPL002 and OPL008 appear there only after they
-are raised.
+The Unity Console shows warnings and errors only, so OPL002, OPL008 and OPL009 appear there only
+after they are raised.
 Add lines like these to a `.editorconfig` at your project root, or use `#pragma warning disable <rule>`
 around a specific allocation:
 
@@ -106,6 +110,7 @@ around a specific allocation:
 dotnet_diagnostic.OPL001.severity = none      # turn OPL001 off
 dotnet_diagnostic.OPL002.severity = warning   # show OPL002 in the Console
 dotnet_diagnostic.OPL008.severity = warning   # show OPL008 in the Console
+dotnet_diagnostic.OPL009.severity = warning   # show OPL009 in the Console
 ```
 
 Or raise only some kinds of OPL002 (leave `dotnet_diagnostic.OPL002.severity` unset for these to

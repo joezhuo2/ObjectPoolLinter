@@ -6,14 +6,15 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 
 ## Features
 
-- **Four rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md) for a misspelled or invalid `object_pool_linter.*` option, [OPL005](docs/rules/OPL005.md) for an `[ObjectPool]` attribute the generator cannot act on, [OPL006](docs/rules/OPL006.md) for a Unity job struct holding a managed field, which makes `Schedule()` throw, and [OPL007](docs/rules/OPL007.md) for a `NativeArray<T>` or other native container allocated with `TempJob` or `Persistent` that is not disposed on every path out of its method, or, kept in a field, never disposed by its type:
+`- **Five rules for Unity hot paths**, plus [OPL004](docs/rules/OPL004.md) for a misspelled or invalid `object_pool_linter.*` option, [OPL005](docs/rules/OPL005.md) for an `[ObjectPool]` attribute the generator cannot act on, [OPL006](docs/rules/OPL006.md) for a Unity job struct holding a managed field, which makes `Schedule()` throw, and [OPL007](docs/rules/OPL007.md) for a `NativeArray<T>` or other native container allocated with `TempJob` or `Persistent` that is not disposed on every path out of its method, or, kept in a field, never disposed by its type:
 
   | Rule | Reports | Default |
   | --- | --- | --- |
   | [OPL001](docs/rules/OPL001.md) | `new` allocations, structs boxed on creation (`object o = new MyStruct();`), and `Object.Instantiate()` | Warning |
   | [OPL002](docs/rules/OPL002.md) | Allocations with no `new` in the source: string concatenation and interpolation, `string.Concat`, `string.Format`, `StringBuilder.ToString()`, capturing lambdas, method-group delegates, implicit `params` arrays, LINQ (including LINQ-style extension methods), boxing, iterator and `async` state machines, and `foreach` over an interface-typed collection | Info |
-  | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`) and `name` / `tag` | Warning |
+  | [OPL003](docs/rules/OPL003.md) | Unity APIs that return a new array (`GetComponentsInChildren<T>()`, `Physics.RaycastAll`, `Camera.allCameras`, `Input.touches`, `Renderer.sharedMaterials`, `Animator.parameters`), `name` / `tag`, and a few other members that build a new string or object (`Application.dataPath`, `Scene.name`, `NavMeshAgent.path`, `JsonUtility.ToJson`) | Warning |
   | [OPL008](docs/rules/OPL008.md) | Asset loads that belong in `Awake` or `Start`: `Resources.Load`, `Resources.LoadAsync`, `Addressables.LoadAssetAsync` and the other Addressables and `AssetReference` loads | Info |
+  | [OPL009](docs/rules/OPL009.md) | Lookups that belong in `Awake` or `Start`: `GetComponent<T>()`, `TryGetComponent`, `GetComponentInChildren`/`InParent` on the same object, and `GameObject.Find`, `FindWithTag` and `FindObjectOfType` | Info |
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
@@ -78,9 +79,9 @@ each DLL in the Inspector:
    exactly that way.
 4. Click **Apply**.
 
-Unity recompiles and OPL001, OPL003 and the other warnings appear in the Console. OPL002 and OPL008
-are Info by default, which the Console does not show; raise them to a warning (below) to see them
-there.
+Unity recompiles and OPL001, OPL003 and the other warnings appear in the Console. OPL002, OPL008 and
+OPL009 are Info by default, which the Console does not show; raise them to a warning (below) to see
+them there.
 
 **Tested on Unity 6000.4.6f1** (Unity 6), where both artifacts import cleanly and OPL001 is reported
 during a batch-mode compile. The analyzer targets Roslyn 3.8, which Unity's documentation names as
@@ -108,6 +109,7 @@ single allocation in `#pragma warning disable <rule>`:
 dotnet_diagnostic.OPL001.severity = none      # turn OPL001 off
 dotnet_diagnostic.OPL002.severity = warning   # show OPL002 in the Unity Console
 dotnet_diagnostic.OPL008.severity = warning   # show OPL008 in the Unity Console
+dotnet_diagnostic.OPL009.severity = warning   # show OPL009 in the Unity Console
 ```
 
 ### Unity code compiled outside the editor
@@ -139,7 +141,7 @@ dotnet test ObjectPoolLinter.slnx -c Release
 ```
 
 The solution includes `samples/SampleUnityCode`, a small MonoBehaviour compiled against Unity stubs
-with the analyzer attached. Building the solution prints its OPL001 to OPL003 and OPL006 to OPL008
+with the analyzer attached. Building the solution prints its OPL001 to OPL003 and OPL006 to OPL009
 warnings; those are expected. To
 check that the sample reports exactly the warnings it should, as CI does:
 
@@ -181,7 +183,7 @@ The analyzer runs automatically during build and in IDEs that support Roslyn ana
 Each rule is documented in its own page, which also covers how to change its severity or suppress it:
 [OPL001](docs/rules/OPL001.md), [OPL002](docs/rules/OPL002.md), [OPL003](docs/rules/OPL003.md),
 [OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md), [OPL006](docs/rules/OPL006.md),
-[OPL007](docs/rules/OPL007.md), [OPL008](docs/rules/OPL008.md).
+[OPL007](docs/rules/OPL007.md), [OPL008](docs/rules/OPL008.md), [OPL009](docs/rules/OPL009.md).
 
 Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing. Four shapes never report in the first place, because the analyzer
@@ -210,7 +212,7 @@ object_pool_linter.boxing_severity = warning
 object_pool_linter.params_severity = none
 ```
 
-The hot-method and exclusion options apply to OPL001, OPL002, OPL003 and OPL008; the `*_severity`
+The hot-method and exclusion options apply to OPL001, OPL002, OPL003, OPL008 and OPL009; the `*_severity`
 options to OPL002 only, and only while `dotnet_diagnostic.OPL002.severity` is not set. Names are case-sensitive, and an
 exclusion does not extend to derived types. A misspelled option or an unusable value is reported as
 [OPL004](docs/rules/OPL004.md) rather than silently ignored.
@@ -314,8 +316,8 @@ None of the three has fix-all support.
 
 ## Automatic suppressions
 
-OPL001, OPL002, OPL003 and OPL008 are suppressed automatically where the allocation is known not to
-run every frame. A suppressed diagnostic still exists, carrying its justification: the IDE greys it out and the
+OPL001, OPL002, OPL003, OPL008 and OPL009 are suppressed automatically where the allocation is known
+not to run every frame. A suppressed diagnostic still exists, carrying its justification: the IDE greys it out and the
 build leaves it out of the warning count.
 
 | Suppression | Suppresses an allocation that is |
@@ -480,10 +482,16 @@ captures state.)
 (`System.Linq.Enumerable` and extension methods from other classes that take `IEnumerable<T>` or
 `IEnumerable`), boxing, calls to iterator and `async` methods, and `foreach` loops whose enumerator
 comes back through an interface (`IList<T>`, `IEnumerable<T>`, a `Transform`), and is Info by default, so
-the Unity Console does not show it until it is raised to a warning. OPL003 matches `UnityEngine`
-members that return an array, plus `name` and `tag`. OPL008 matches `Resources.Load`,
-`Resources.LoadAsync`, `Addressables.Load*` and `AssetReference.Load*`, and is Info as well. Still
-not reported by any rule:
+the Unity Console does not show it until it is raised to a warning. OPL003 matches `UnityEngine`,
+`UnityEngine.SceneManagement` and `UnityEngine.AI` members that return an array, plus `name`, `tag` and
+a short list of members that build a new string or object (`Application.dataPath` and the other
+paths, `Scene.name`, `Scene.path`, `Animator.GetParameter`, `Animator.GetLayerName`,
+`NavMeshAgent.path`, `JsonUtility.ToJson` and `FromJson`). OPL008 matches `Resources.Load`,
+`Resources.LoadAsync`, `Addressables.Load*` and `AssetReference.Load*`, and is Info as well. OPL009
+matches `GetComponent`, `TryGetComponent`, `GetComponentInChildren` and `GetComponentInParent` on the
+same object (not on a collider passed to `OnTriggerStay` or a raycast hit, which change every call),
+and `GameObject.Find`, `FindWithTag`, `FindGameObjectWithTag` and the single-object `Find*ObjectOfType`
+/ `Find*ObjectByType` methods; it is Info too. Still not reported by any rule:
 
 - allocations inside base class library or Unity methods other than the ones above, and a custom
   enumerator class returned by a collection's own public `GetEnumerator()` (`foreach` over `List<T>`,
@@ -494,9 +502,11 @@ not reported by any rule:
   pooled task-like type such as UniTask or `Awaitable`, which is deliberate;
 - `new int?()` (which boxes to null) and boxing of an unconstrained generic `T`, which depends on the
   type argument at run time;
-- Unity APIs that cost CPU time without allocating, such as `GameObject.Find` and `GetComponent<T>()`;
-- Unity string properties other than `name` and `tag`, and array-returning members of managed packages
-  outside the core `UnityEngine` namespace (`UnityEngine.UI` and others).
+- Unity APIs that cost CPU time without allocating, other than the lookups OPL009 matches (for
+  example `GetComponent<T>()` on a parameter or a local, which cannot be cached);
+- Unity string and object members other than the ones listed above, and array-returning members of
+  managed packages outside `UnityEngine`, `UnityEngine.SceneManagement` and `UnityEngine.AI`
+  (`UnityEngine.UI` and others).
 
 Code that Burst compiles is never reported, by design: Burst refuses managed allocations when it
 compiles, so they cannot reach the player. `[BurstCompile]` on a MonoBehaviour's `Update` does nothing
@@ -527,6 +537,13 @@ its type disposes it, on any path. Containers created by a method (`ToNativeArra
 `CollectionHelper.CreateNativeArray`), with a non-constant allocator, or inside a lambda are not
 checked; `Allocator.Temp` never is, since Unity frees it. See
 [docs/rules/OPL007.md](docs/rules/OPL007.md#what-is-not-reported-and-why).
+
+**OPL009 cannot tell a stable receiver from a stale one.** A lookup on `this`, or on an object
+reached through fields and properties, is reported because it usually returns the same component
+every frame; if the field is reassigned, the cached result has to be refreshed with it. A lookup on a
+parameter, a local, a method result, an array element or a struct such as `RaycastHit` is not
+reported, even when it happens to return the same object each time. See
+[docs/rules/OPL009.md](docs/rules/OPL009.md#what-is-not-reported-and-why).
 
 **The suppressor is syntactic and local.** It recognizes four written-out shapes
 ([Automatic suppressions](#automatic-suppressions)). A guard behind a method call or a property, and

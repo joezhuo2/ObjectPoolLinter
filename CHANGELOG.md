@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.1] - 2026-09-23
+
+### Added
+- **OPL009, component or object lookup in hot path** (Info, category Performance). Inside a hot path,
+  `GetComponent<T>()`, `GetComponent(Type)`, `GetComponent(string)`, `TryGetComponent`,
+  `GetComponentInChildren` and `GetComponentInParent` (on `Component` or `GameObject`) are reported
+  when called on this object or on one reached through fields and properties (`gameObject`,
+  `transform.parent`, `_target`, `Player.Instance`), with the advice to get it once in `Awake` or
+  `Start` and keep it in a field. `GameObject.Find`, `FindWithTag`, `FindGameObjectWithTag`,
+  `Object.FindObjectOfType`, `FindFirstObjectByType` and `FindAnyObjectByType` are reported as scene
+  searches. None of these allocates, so OPL001 to OPL003 never covered them. A lookup on a parameter,
+  a local, a method result, an array element or a struct member (`other.GetComponent<T>()` in
+  `OnTriggerStay`, `hit.collider.GetComponent<T>()`) is not reported, since the object changes from
+  call to call. The array-returning lookups stay with OPL003. The rule uses the same hot-path list,
+  `.editorconfig` options and Burst exemption as OPL001 to OPL003, and the automatic suppressions
+  cover it, so `if (_body == null) _body = GetComponent<Rigidbody>();` is suppressed as `OPLS004`.
+- **OPL003 covers more allocating Unity APIs.** Array-returning members of `UnityEngine.SceneManagement`
+  and `UnityEngine.AI` are now matched (`Scene.GetRootGameObjects()`, `NavMeshPath.corners`), along
+  with members that build a new string or object on every call: `Application.dataPath`,
+  `persistentDataPath`, `streamingAssetsPath` and `temporaryCachePath`; `Scene.name` and `Scene.path`;
+  `Animator.GetParameter(int)` (which reads the `parameters` array internally) and
+  `Animator.GetLayerName(int)`; `NavMeshAgent.path`; `JsonUtility.ToJson` and `JsonUtility.FromJson<T>`.
+  `Animator.parameters` was already reported as an array property; `Animator.layerCount` and
+  `parameterCount` return `int` and are deliberately not reported.
+- 15 tests, for 315 in total. `samples/SampleUnityCode` gains a `Wheel` behaviour with a
+  `GetComponent` in `Update`, a cached lookup the suppressor silences, a lookup on the collider passed
+  to `OnTriggerStay` that stays quiet, and a `Renderer.sharedMaterials` read. Its `.editorconfig`
+  raises OPL009 to a warning, and `build/verify-sample.ps1` now expects 17 warnings and recognizes the
+  OPL009 messages.
+
+### Changed
+- New page [docs/rules/OPL009.md](docs/rules/OPL009.md). [README.md](README.md),
+  [docs/configuration.md](docs/configuration.md), [docs/suppressions.md](docs/suppressions.md),
+  [docs/rules/OPL001.md](docs/rules/OPL001.md), [docs/rules/OPL003.md](docs/rules/OPL003.md),
+  [docs/rules/OPL008.md](docs/rules/OPL008.md) and the Unity package README describe OPL009 and the
+  wider OPL003 coverage. The Known limitations section gains an entry for how OPL009 picks receivers.
+- OPL009 is recorded under 1.6.1 in `AnalyzerReleases.Shipped.md`. No code fix is offered for it.
+
+### Fixed
+- [docs/rules/OPL003.md](docs/rules/OPL003.md) recommended `Renderer.sharedMaterials` as the
+  non-allocating replacement for `Renderer.materials`. It is not: the `sharedMaterials` getter returns a
+  new copy of the array on every read, though it does not instantiate materials. OPL003 keeps
+  reporting it (a test now pins that), and the page recommends `GetMaterials(List<Material>)`,
+  `GetSharedMaterials(List<Material>)` or the singular `sharedMaterial` instead.
+
 ## [v1.6.0] - 2026-09-23
 
 ### Added
@@ -926,7 +971,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.1...HEAD
+[v1.6.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.0...v1.6.1
 [v1.6.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.6...v1.6.0
 [v1.5.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.5...v1.5.6
 [v1.5.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.4...v1.5.5

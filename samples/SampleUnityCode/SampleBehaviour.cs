@@ -249,3 +249,30 @@ public class Radar : MonoBehaviour
         var temp = new Unity.Collections.NativeArray<int>(count, Unity.Collections.Allocator.Temp);
     }
 }
+
+// 1.6.1: component lookups, and sharedMaterials, which still copies its array.
+public class Wheel : MonoBehaviour
+{
+    public Renderer tyre = null!;
+
+    private Rigidbody _body = null!;
+
+    void Update()
+    {
+        // OPL009 (raised to a warning in .editorconfig): the same component is looked up every frame
+        var body = GetComponent<Rigidbody>();
+
+        // Suppressed (OPLS004): looked up once and cached in a field
+        if (_body == null)
+            _body = GetComponent<Rigidbody>();
+
+        // OPL003: the getter returns a new copy of the array on every read
+        var materials = tyre.sharedMaterials;
+    }
+
+    void OnTriggerStay(Collider other)
+    {
+        // No OPL009: a different object every call, so there is nothing to cache
+        var otherBody = other.GetComponent<Rigidbody>();
+    }
+}

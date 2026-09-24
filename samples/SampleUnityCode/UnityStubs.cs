@@ -13,6 +13,20 @@ namespace UnityEngine
 
     public class Component : Object
     {
+        public T GetComponent<T>() => default!;
+    }
+
+    public class Collider : Component
+    {
+    }
+
+    public class Rigidbody : Component
+    {
+    }
+
+    public class Renderer : Component
+    {
+        public Object[] sharedMaterials => System.Array.Empty<Object>();
     }
 
     public class Behaviour : Component

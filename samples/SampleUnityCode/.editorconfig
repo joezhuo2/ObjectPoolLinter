@@ -7,3 +7,5 @@ object_pool_linter.excluded_types = LoadingScreen
 dotnet_diagnostic.OPL002.severity = warning
 # OPL008 is Info as well.
 dotnet_diagnostic.OPL008.severity = warning
+# And OPL009.
+dotnet_diagnostic.OPL009.severity = warning
