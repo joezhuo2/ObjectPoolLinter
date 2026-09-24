@@ -25,13 +25,20 @@
 .PARAMETER Version
     Version to stamp on the artifacts. Defaults to the <Version> in the package project; the release
     workflow passes the version derived from the tag.
+
+.PARAMETER UnityVersion
+    Minimum Unity version the UPM package declares, as <year>.<minor> (the "unity" field of
+    package.json). Defaults to 2021.3, the oldest release for which Unity documents Roslyn 3.8, the
+    version this analyzer is built against, as the analyzer API. Raise it here when that changes.
 #>
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
     [string]$OutputDirectory,
     [switch]$SkipBuild,
-    [string]$Version
+    [string]$Version,
+    [ValidatePattern('^\d{4}\.\d+$')]
+    [string]$UnityVersion = '2021.3'
 )
 
 Set-StrictMode -Version Latest
@@ -144,6 +151,12 @@ function Write-TextFile([string]$path, [string]$content) {
 }
 
 $manifest = (Get-Content -Raw (Join-Path $repoRoot 'unity/package.json.in')).Replace('__VERSION__', $version)
+$manifest = $manifest.Replace('__UNITY_VERSION__', $UnityVersion)
+
+# A placeholder the replacements above missed (a renamed or newly added __NAME__) would ship as a
+# literal string, and Unity rejects a package.json whose version is not SemVer. Fail here instead.
+$leftover = [regex]::Matches($manifest, '__[A-Z0-9_]+__') | ForEach-Object { $_.Value } | Select-Object -Unique
+if ($leftover) { throw "unity/package.json.in has unreplaced placeholders: $($leftover -join ', ')." }
 $packageReadme = Get-Content -Raw (Join-Path $repoRoot 'unity/README.md')
 $license = Get-Content -Raw (Join-Path $repoRoot 'LICENSE')
 
@@ -178,6 +191,15 @@ if (Test-Path $tgz) { Remove-Item -Force $tgz }
 & tar -czf $tgz -C (Join-Path $staging 'upm') 'package'
 if ($LASTEXITCODE -ne 0) { throw "tar failed while building $tgz." }
 
+# Check the manifest as it landed in the tarball, not the string written to staging: this is the file
+# Unity reads.
+$packedManifest = (& tar -xzOf $tgz 'package/package.json') -join "`n"
+if ($LASTEXITCODE -ne 0) { throw "Could not read package/package.json back from $tgz." }
+if ($packedManifest -match '__[A-Z0-9_]+__') { throw "$tgz carries an unreplaced placeholder: $($Matches[0])." }
+$packed = $packedManifest | ConvertFrom-Json
+if ($packed.version -ne $version) { throw "$tgz declares version '$($packed.version)', expected '$version'." }
+if ($packed.unity -ne $UnityVersion) { throw "$tgz declares unity '$($packed.unity)', expected '$UnityVersion'." }
+
 # ----------------------------------------------------------- .unitypackage
 
 # A .unitypackage is a gzipped tar of one directory per asset, named by the asset's GUID and holding
@@ -209,6 +231,6 @@ if ($LASTEXITCODE -ne 0) { throw "tar failed while building $unityPackage." }
 
 Remove-Item -Recurse -Force $staging
 
-Write-Host "ObjectPoolLinter $version"
+Write-Host "ObjectPoolLinter $version (Unity $UnityVersion or newer)"
 Write-Host "  $unityPackage"
 Write-Host "  $tgz"

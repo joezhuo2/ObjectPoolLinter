@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.2] - 2026-09-23
+
+Packaging only: the analyzers, code fixes, generator and suppressor are unchanged from 1.6.1.
+
+### Added
+- **Release notes in the NuGet package.** `PackageReleaseNotes` is now set, so the Visual Studio and
+  Rider package managers show what changed in a version without a trip to GitHub. The notes are the
+  section of CHANGELOG.md whose heading names the version being packed, the same text the release
+  workflow publishes as the GitHub release notes, followed by a link to the full changelog. They are
+  read at pack time, so the `-p:Version=...` the release workflow passes selects the right section; a
+  version with no section here (a local build between releases) gets just the link.
+- **Package icon.** The `.nupkg` carries `icon.png` (128x128) as its `PackageIcon`, so nuget.org
+  search results and the IDE package managers show it instead of the default placeholder.
+- `build/pack-unity.ps1 -UnityVersion <year>.<minor>` sets the minimum Unity version the UPM package
+  declares. It defaults to `2021.3`, the oldest release for which Unity documents Roslyn 3.8, the
+  version the analyzer is built against; `unity/package.json.in` now carries a `__UNITY_VERSION__`
+  placeholder instead of the hard-coded value.
+
+### Changed
+- The package copyright year is no longer hard-coded. It is computed at build time as the span from
+  the first release year to the current one: `Copyright (c) 2026 Joe Zhuo` this year,
+  `Copyright (c) 2026-2027 Joe Zhuo` next year.
+- `build/pack-unity.ps1` fails if `unity/package.json.in` still holds any `__NAME__` placeholder after
+  substitution, then reads `package/package.json` back out of the finished `.tgz` and fails unless it
+  is free of placeholders and declares the expected `version` and `unity`. The build workflow now runs
+  the Unity pack on every push and pull request and uploads the `.unitypackage` and `.tgz` as a
+  `unity` artifact, so a broken manifest fails CI before a release tag is pushed rather than after.
+- [docs/unity-package-manager.md](docs/unity-package-manager.md) documents why the minimum is 2021.3
+  and how to change it, and the README's build section mentions `-UnityVersion`.
+
 ## [v1.6.1] - 2026-09-23
 
 ### Added
@@ -971,7 +1001,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.2...HEAD
+[v1.6.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.1...v1.6.2
 [v1.6.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.0...v1.6.1
 [v1.6.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.6...v1.6.0
 [v1.5.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.5...v1.5.6

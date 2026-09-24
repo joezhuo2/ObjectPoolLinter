@@ -161,7 +161,11 @@ pwsh build/pack-unity.ps1
 Writes `ObjectPoolLinter-<version>.unitypackage` and `com.joezhuo.objectpoollinter-<version>.tgz`
 to `artifacts/unity/`. The version comes from
 `src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj` unless you pass `-Version <version>`.
-Add `-SkipBuild` to package the DLLs already in `bin/Release` instead of building first.
+Add `-SkipBuild` to package the DLLs already in `bin/Release` instead of building first, and
+`-UnityVersion <year>.<minor>` to change the minimum Unity version the UPM package declares (default
+`2021.3`; see [Minimum Unity version](docs/unity-package-manager.md#minimum-unity-version)). The script
+fails if `unity/package.json.in` has a placeholder left unreplaced or if the `package.json` inside the
+finished tarball declares the wrong version; CI runs it on every push.
 
 ### Releases
 
@@ -170,6 +174,10 @@ notes come from the `## [<tag>]` section of `CHANGELOG.md`, and the run builds, 
 NuGet package and both Unity artifacts. From 1.0.0 on it pushes the package to nuget.org and creates
 the GitHub release with the artifacts attached. `0.x` tags are dry runs that only upload the files
 as a workflow artifact.
+
+The same `CHANGELOG.md` section is embedded in the `.nupkg` as its release notes, so NuGet clients
+show it too. `dotnet pack` picks the section whose heading matches the version being packed; a version
+without one gets a link to the changelog instead.
 
 Publishing uses nuget.org [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing),
 so the repository stores no API key. It needs two things set up once: a Trusted Publishing policy on

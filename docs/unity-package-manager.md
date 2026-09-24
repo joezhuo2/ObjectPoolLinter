@@ -144,9 +144,31 @@ the `guid:` line is the first field.
 3. Delete the script.
 
 **Tested on Unity 6000.4.6f1**, where the tarball imports cleanly and OPL001 is reported during a
-batch-mode compile. The package declares `"unity": "2021.3"` because Unity documents Roslyn 3.8 as the
-required analyzer version for 2021.3 and 2022.3, which is what this analyzer targets; those two
-versions are not tested here.
+batch-mode compile. 2021.3 and 2022.3 are declared but not tested here; see below.
+
+## Minimum Unity version
+
+The package declares `"unity": "2021.3"`, and that value is deliberate. The analyzer is built against
+Roslyn 3.8 (`Microsoft.CodeAnalysis.CSharp` 3.8.0), and Unity documents 3.8 as the analyzer API
+version for 2021.3 and 2022.3; Unity 6 accepts plugins built against 4.3 or lower, so the same build
+covers it. Nothing older is covered by that documentation or tested here, so UPM refuses the package
+on older editors rather than installing an analyzer that might silently fail to load.
+
+The value is not hard-coded in `unity/package.json.in`, which carries a `__UNITY_VERSION__`
+placeholder. [`build/pack-unity.ps1`](../build/pack-unity.ps1) fills it from `-UnityVersion`, which
+defaults to `2021.3`:
+
+```
+pwsh build/pack-unity.ps1 -UnityVersion 2022.3
+```
+
+The parameter only accepts `<year>.<minor>`, the form UPM expects. Raise the default in the script
+when the minimum moves - for example if the analyzer is rebuilt against a newer Roslyn that 2021.3
+cannot load - and record it in the changelog, since it stops the package installing on older editors.
+
+After packing, the script reads `package/package.json` back out of the `.tgz` and fails if any
+`__NAME__` placeholder survived or if `version` or `unity` differ from what was requested. CI runs
+the Unity pack on every push, so a broken manifest never reaches a release.
 
 ## Troubleshooting
 
