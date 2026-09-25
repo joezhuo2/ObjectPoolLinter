@@ -281,6 +281,10 @@ still reported, but a misspelled *name* is not.
 
 - **Nearer wins.** An `.editorconfig` in a subfolder overrides the same option from a folder above.
 - **Later wins.** Inside one file, a later matching section overrides an earlier one.
+- **Options are per file.** A section can match a single file (`[Simulation.cs]`) or a glob
+  (`[Assets/Scripts/AI/**.cs]`), and its options apply only to the files it matches: with
+  `additional_hot_methods = Tick` in a `[Simulation.cs]` section, `Replay.Tick()` in another file of
+  the same project is not treated as hot.
 - **Values replace, they do not merge.** A subfolder's `additional_hot_methods = Simulate` replaces the
   root's `Tick, OnPreCull`; it does not add to it. Repeat the root's entries if you want both.
 - **`.editorconfig` beats `.globalconfig`.** Global configs have the lowest precedence. If two global

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.3] - 2026-09-25
+
+Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.6.2.
+
+### Added
+- **Integration tests** (`IntegrationTests.cs`) that run OPL001, OPL002 and OPL003 together over one
+  compilation, as a build does:
+  - **Multiple rules on one source.** `new List<RaycastHit>(Physics.RaycastAll(ray))` in `Update`
+    reports OPL001 for the list and OPL003 for the array, and a string interpolation on the next line
+    reports OPL002; no rule duplicates or drops another's diagnostic, the same code in `Start` reports
+    nothing, and the three rules' diagnostic IDs are distinct.
+  - **Multiple files.** A `partial` MonoBehaviour declared in one file with `Update` in another, and a
+    MonoBehaviour base class in one file with the subclass in another, are both recognized as hot; an
+    option set for `*.cs` applies to every file.
+  - **Per-file `.editorconfig` sections.** `additional_hot_methods = Tick` in an `[A.cs]` section makes
+    `Tick` hot in `A.cs` but not in `B.cs`; different `[A.cs]` and `[B.cs]` sections each keep their
+    own hot methods; `excluded_types_regex` in one file's section leaves a matching type in another
+    file reported. This covers the per-syntax-tree options cache in `HotPathDetector`.
+
+### Changed
+- [docs/configuration.md](docs/configuration.md#how-files-combine) states that options apply per
+  file, with an example of a section that targets one file.
+
 ## [v1.6.2] - 2026-09-23
 
 Packaging only: the analyzers, code fixes, generator and suppressor are unchanged from 1.6.1.
@@ -1001,7 +1025,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.3...HEAD
+[v1.6.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.2...v1.6.3
 [v1.6.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.1...v1.6.2
 [v1.6.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.0...v1.6.1
 [v1.6.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.5.6...v1.6.0
