@@ -38,7 +38,7 @@ namespace UnityEngine
             {
                 TestCode = source,
                 FixedCode = fixedSource,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
                 CodeActionEquivalenceKey = equivalenceKey,
                 CompilerDiagnostics = CompilerDiagnostics.Errors,
                 CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne | CodeFixTestBehaviors.SkipFixAllCheck,
@@ -1010,7 +1010,7 @@ public class MyBehaviour : MonoBehaviour
             {
                 TestCode = source,
                 FixedCode = fixedSource,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
                 CodeActionEquivalenceKey = ReplaceWithPoolGetKey,
                 CompilerDiagnostics = CompilerDiagnostics.Errors,
             };
@@ -1076,7 +1076,7 @@ public class MyBehaviour : MonoBehaviour
                 TestCode = source,
                 FixedCode = afterOneIteration,
                 BatchFixedCode = afterFixAll,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
                 CodeActionEquivalenceKey = AddPoolingCommentKey,
                 CompilerDiagnostics = CompilerDiagnostics.Errors,
                 // The fix never converges, so stop the incremental pass after the first fix and
@@ -1123,7 +1123,7 @@ public class MyBehaviour : MonoBehaviour
             var project = workspace.CurrentSolution
                 .AddProject("TestProject", "TestProject", LanguageNames.CSharp)
                 .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
-                .WithMetadataReferences(await ReferenceAssemblies.Net.Net80.ResolveAsync(LanguageNames.CSharp, CancellationToken.None));
+                .WithMetadataReferences(await TestReferenceAssemblies.Default.ResolveAsync(LanguageNames.CSharp, CancellationToken.None));
 
             var document = project.AddDocument("Test0.cs", source);
             project = document.Project.AddDocument("UnityStub.cs", UnityStub).Project;

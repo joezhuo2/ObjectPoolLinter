@@ -14,7 +14,7 @@ namespace ObjectPoolLinter.Tests
         public HotPathAnalyzerTest(string source, string unityStub, params DiagnosticResult[] expected)
         {
             TestCode = source;
-            ReferenceAssemblies = ReferenceAssemblies.Net.Net80;
+            ReferenceAssemblies = TestReferenceAssemblies.Default;
             TestState.Sources.Add(unityStub);
             ExpectedDiagnostics.AddRange(expected);
         }

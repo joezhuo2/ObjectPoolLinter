@@ -140,6 +140,16 @@ dotnet build ObjectPoolLinter.slnx -c Release
 dotnet test ObjectPoolLinter.slnx -c Release
 ```
 
+The tests compile their C# sources against the .NET Standard 2.1 reference assemblies, the default API
+compatibility level of Unity 2021.3, the oldest Unity the package supports. Setting
+`OPL_TEST_REFERENCE_ASSEMBLIES=newest` reruns them against the .NET 10 reference assemblies; CI runs
+both. CI also collects line coverage of the analyzer and code fix assemblies and fails below 90%:
+
+```
+dotnet test ObjectPoolLinter.slnx -c Release --collect:"XPlat Code Coverage" --settings tests/ObjectPoolLinter.Tests/coverage.runsettings --results-directory artifacts/coverage
+pwsh build/check-coverage.ps1
+```
+
 The solution includes `samples/SampleUnityCode`, a small MonoBehaviour compiled against Unity stubs
 with the analyzer attached. Building the solution prints its OPL001 to OPL003 and OPL006 to OPL009
 warnings; those are expected. To

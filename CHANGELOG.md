@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.4] - 2026-09-26
+
+Tests, CI and documentation only: the analyzers, code fixes, generator and suppressor are unchanged
+from 1.6.3.
+
+### Added
+- **OPL002 tests for boxing that belongs to a string allocation.** `"value: " + count + " at " +
+  position` and `log += count` report one `string concatenation` each, and `$"value: {count} at
+  {(object)position}"` reports one `string interpolation`, under C# 9 and the latest language
+  version, with no extra `boxing ... to object`. Each test first compiles the source and asserts the
+  boxing conversions really sit under the concatenation or interpolation, so it cannot pass
+  vacuously; removing either skip in `AnalyzeConversion` fails it. An implicit hole (`{count}`) has no
+  conversion in the operation tree at all, so only an explicit cast reaches the interpolation skip.
+- **Code coverage in CI.** The build workflow collects line and branch coverage of `ObjectPoolLinter`
+  and `ObjectPoolLinter.CodeFixes` through `coverlet.collector` (settings in
+  `tests/ObjectPoolLinter.Tests/coverage.runsettings`), and `build/check-coverage.ps1` prints it to the
+  log and the job summary and fails the build when line coverage drops below 90%. It is 93.9% today.
+
+### Changed
+- **Test reference assemblies are chosen on purpose.** Test sources used to compile against the
+  .NET 8 reference assemblies. They now compile against .NET Standard 2.1, the default API
+  compatibility level of Unity 2021.3, the oldest Unity the package declares, so they see what a Unity
+  project sees (no `DefaultInterpolatedStringHandler`, no `PoolingAsyncValueTaskMethodBuilder`).
+  `OPL_TEST_REFERENCE_ASSEMBLIES=newest` switches every test to the .NET 10 reference assemblies, and
+  CI runs the suite both ways. The choice lives in one place,
+  `tests/ObjectPoolLinter.Tests/TestReferenceAssemblies.cs`. The one test that needs a .NET 6+ type
+  (`PoolingAsyncValueTaskMethodBuilder`) pins the newest set.
+
 ## [v1.6.3] - 2026-09-25
 
 Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1025,7 +1053,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.3...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.4...HEAD
+[v1.6.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.3...v1.6.4
 [v1.6.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.2...v1.6.3
 [v1.6.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.1...v1.6.2
 [v1.6.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.0...v1.6.1

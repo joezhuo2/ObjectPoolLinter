@@ -1,8 +1,11 @@
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Operations;
 using Microsoft.CodeAnalysis.Testing;
 using Xunit;
 
@@ -519,6 +522,95 @@ public class Counter : MonoBehaviour
                 Diagnostic("boxing int to IComparable", location: 1));
         }
 
+        [Theory]
+        [InlineData(LanguageVersion.CSharp9)]
+        [InlineData(LanguageVersion.Latest)]
+        public async Task BoxingInInterpolationHole_IsNotReportedTwice(LanguageVersion languageVersion)
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    int count;
+    Vector3 position;
+
+    void Update()
+    {
+        var text = {|#0:$""value: {count} at {(object)position} ({(object)count,4})""|};
+    }
+}
+";
+
+            // An implicit hole (`{count}`) has no conversion in the operation tree under either language
+            // version: C# 9 (Unity 2021.3's) boxes it only when lowering to string.Format, and C# 10+
+            // may not box at all. An explicit cast (`{(object)count}`) is a boxing conversion whose
+            // parent is the interpolation, the case AnalyzeConversion skips as part of the string
+            // allocation already reported.
+            await AssertBoxedAsync<IInterpolationOperation>(source, languageVersion, 2);
+
+            var test = CreateTest(source, Diagnostic("string interpolation"));
+            test.LanguageVersion = languageVersion;
+            await test.RunAsync();
+        }
+
+        [Fact]
+        public async Task BoxingInConcatenationOperand_IsNotReportedTwice()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    int count;
+    Vector3 position;
+    string log = """";
+
+    void Update()
+    {
+        var text = {|#0:""value: "" + count + "" at "" + position|};
+        {|#1:log += count|};
+    }
+}
+";
+
+            // `string + int` binds to operator +(string, object), so the operand is boxed; that boxing
+            // is part of the concatenation already reported.
+            await AssertBoxedAsync<IBinaryOperation>(source, LanguageVersion.Latest, 2);
+            await AssertBoxedAsync<ICompoundAssignmentOperation>(source, LanguageVersion.Latest, 1);
+
+            await VerifyAsync(
+                source,
+                Diagnostic("string concatenation"),
+                Diagnostic("string concatenation", location: 1));
+        }
+
+        // Guards the two tests above against passing vacuously: the compiled source must really contain
+        // the given number of boxing conversions directly under a TParent operation, which is the case
+        // AnalyzeConversion skips.
+        private static async Task AssertBoxedAsync<TParent>(string source, LanguageVersion languageVersion, int expected)
+            where TParent : class, IOperation
+        {
+            var references = await TestReferenceAssemblies.Default.ResolveAsync(LanguageNames.CSharp, CancellationToken.None);
+            var tree = CSharpSyntaxTree.ParseText(
+                source.Replace("{|#0:", string.Empty).Replace("{|#1:", string.Empty).Replace("|}", string.Empty),
+                new CSharpParseOptions(languageVersion));
+            var compilation = CSharpCompilation.Create(
+                "Boxing",
+                new[] { tree, CSharpSyntaxTree.ParseText(UnityStub, new CSharpParseOptions(languageVersion)) },
+                references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            Assert.Empty(compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
+
+            var model = compilation.GetSemanticModel(tree);
+            var boxed = tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()
+                .SelectMany(method => model.GetOperation(method)!.Descendants())
+                .OfType<IConversionOperation>()
+                .Count(conversion => conversion.GetConversion().IsBoxing && conversion.Parent is TParent);
+
+            Assert.Equal(expected, boxed);
+        }
+
         [Fact]
         public async Task BoxingOnCreation_IsLeftToOpl001()
         {
@@ -919,7 +1011,10 @@ public class Saver : MonoBehaviour
 }
 ";
 
-            await VerifyAsync(source);
+            // PoolingAsyncValueTaskMethodBuilder is .NET 6+; no Unity profile has it.
+            var test = CreateTest(source);
+            test.ReferenceAssemblies = TestReferenceAssemblies.Newest;
+            await test.RunAsync();
         }
 
         [Fact]
@@ -1150,7 +1245,7 @@ public class Squad : MonoBehaviour
 
         private static async Task<MetadataReference> CompileLibraryAsync(string source)
         {
-            var references = await ReferenceAssemblies.Net.Net80.ResolveAsync(LanguageNames.CSharp, CancellationToken.None);
+            var references = await TestReferenceAssemblies.Default.ResolveAsync(LanguageNames.CSharp, CancellationToken.None);
             var compilation = CSharpCompilation.Create(
                 "Library",
                 new[] { CSharpSyntaxTree.ParseText(source) },

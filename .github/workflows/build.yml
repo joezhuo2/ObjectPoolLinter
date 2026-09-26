@@ -34,11 +34,28 @@ jobs:
       - name: Build
         run: dotnet build ObjectPoolLinter.slnx -c Release --no-restore -warnaserror
 
-      - name: Test
+      # Test sources compile against .NET Standard 2.1, the default profile of Unity 2021.3, the oldest
+      # Unity the package supports (tests/ObjectPoolLinter.Tests/TestReferenceAssemblies.cs). This run
+      # also collects coverage of the shipped assemblies.
+      - name: Test (oldest reference assemblies)
         run: >-
           dotnet test ObjectPoolLinter.slnx -c Release --no-build
           --logger "trx;LogFileName=test-results.trx"
           --results-directory artifacts/test-results
+          --collect:"XPlat Code Coverage"
+          --settings tests/ObjectPoolLinter.Tests/coverage.runsettings
+
+      - name: Test (newest reference assemblies)
+        env:
+          OPL_TEST_REFERENCE_ASSEMBLIES: newest
+        run: >-
+          dotnet test ObjectPoolLinter.slnx -c Release --no-build
+          --logger "trx;LogFileName=test-results-newest.trx"
+          --results-directory artifacts/test-results
+
+      - name: Check coverage
+        shell: pwsh
+        run: ./build/check-coverage.ps1 -ResultsDirectory artifacts/test-results
 
       - name: Verify sample diagnostics
         shell: pwsh

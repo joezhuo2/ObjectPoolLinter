@@ -37,7 +37,7 @@ namespace UnityEngine
         {
             public AllRulesTest(params DiagnosticResult[] expected)
             {
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80;
+                ReferenceAssemblies = TestReferenceAssemblies.Default;
                 ExpectedDiagnostics.AddRange(expected);
             }
 

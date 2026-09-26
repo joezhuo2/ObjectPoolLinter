@@ -31,7 +31,7 @@ namespace UnityEngine
             {
                 TestCode = source,
                 FixedCode = fixedSource,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
                 CodeActionEquivalenceKey = equivalenceKey,
                 CompilerDiagnostics = CompilerDiagnostics.Errors,
                 CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne | CodeFixTestBehaviors.SkipFixAllCheck,

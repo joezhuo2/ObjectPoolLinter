@@ -39,7 +39,7 @@ namespace UnityEngine
             var test = new Test
             {
                 TestCode = source,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
             };
 
             test.TestState.Sources.Add(UnityStub);
@@ -53,7 +53,7 @@ namespace UnityEngine
             var test = new Test
             {
                 TestCode = source,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
             };
 
             test.TestState.Sources.Add(UnityStub);
@@ -69,7 +69,7 @@ namespace UnityEngine
             var test = new Test
             {
                 TestCode = source,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
             };
 
             test.ExpectedDiagnostics.AddRange(expected);
@@ -1230,7 +1230,7 @@ public class Simulation
             var test = new Test
             {
                 TestCode = source,
-                ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
             };
             test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", "root = true\n\n[*]\nobject_pool_linter.additional_hot_methods = Tick\n"));
 
