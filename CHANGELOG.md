@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.7] - 2026-09-27
+
+Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.6.6.
+
+### Added
+- **Delegate, `params` and LINQ edge-case tests** in `IntegrationTests.cs`. Each runs OPL001, OPL002
+  and OPL003 together, so a case one rule skips cannot be reported by another:
+  - **`new` of a delegate type**: `new Action(() => {})`, `new Action(delegate { })`, `new Action(Spawn)`,
+    `new Action(Tick)` for a static `Tick`, `new Func<int>(() => wave)` and
+    `new Func<int, int>(x => x * 2)` each report one OPL001 `new Action` or `new Func<...>`, and no
+    OPL002, even when the lambda captures or wraps an instance method group.
+  - **Lambdas that capture nothing**: `() => 42`, `static () => 42`, `x => x * 2`, `delegate { }`, a
+    lambda reading a constant or a static field or calling `Math.Max`, a non-capturing lambda nested in
+    another, and `Run(() => 42)`. No rule reports.
+  - **Static method groups on a class that is not a MonoBehaviour**: `Helper.Spawn` and `Helper.Twice`
+    on a static class and `Pool.Warm` on a plain class, declared in another file, assigned or passed
+    as an argument. Not reported under C# 11 or the latest version; `Helper.Spawn` under C# 10 is
+    reported as `delegate for Spawn()`.
+  - **A `params` parameter given no arguments**: a static method, an instance method on another class,
+    a method with only a `params` parameter, a generic `Pick<int>()`, and `Array.Empty<string>()`
+    passed explicitly. No rule reports.
+  - **`Enumerable.Empty<T>()`**: assigned, passed as an argument, fully qualified and called through
+    `using static System.Linq.Enumerable;`. No rule reports. `Enumerable.Empty<int>().Where(...).ToList()`
+    reports `LINQ Where().ToList()`, with `Empty` left out of the chain.
+
+### Changed
+- [docs/rules/OPL001.md](docs/rules/OPL001.md#cause) says that `new` of a delegate type is reported as
+  an object creation whatever it wraps, and that OPL002 does not report it again.
+- [docs/rules/OPL002.md](docs/rules/OPL002.md#what-is-not-reported-and-why) lists the non-capturing
+  lambda forms, says that C# 11 caches static method groups declared on any class, adds
+  `new Action(() => {})` to the expressions left to OPL001, and describes the empty `params` expansion
+  and `Enumerable.Empty<T>()` cases the new tests cover.
+
 ## [v1.6.6] - 2026-09-26
 
 Tests and documentation, plus one internal cleanup: analyzer and code fix behaviour is unchanged from
@@ -1113,7 +1147,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.6...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.7...HEAD
+[v1.6.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.6...v1.6.7
 [v1.6.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.5...v1.6.6
 [v1.6.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.4...v1.6.5
 [v1.6.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.3...v1.6.4

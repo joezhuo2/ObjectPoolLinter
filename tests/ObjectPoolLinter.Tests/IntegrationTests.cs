@@ -11,7 +11,8 @@ using Xunit;
 namespace ObjectPoolLinter.Tests
 {
     // T1-T3: the analyzers running together over one compilation, over several files, and with
-    // .editorconfig sections that apply to some files only.
+    // .editorconfig sections that apply to some files only. T20-T24: delegate, params and LINQ edge
+    // cases, run against all three rules so that a case one rule skips is not reported by another.
     public class IntegrationTests
     {
         private const string UnityStub = @"
@@ -48,8 +49,10 @@ namespace UnityEngine
             protected override CompilationOptions CreateCompilationOptions() =>
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
 
+            public LanguageVersion LanguageVersion { get; set; } = LanguageVersion.Latest;
+
             protected override ParseOptions CreateParseOptions() =>
-                new CSharpParseOptions(LanguageVersion.Latest);
+                new CSharpParseOptions(LanguageVersion);
 
             protected override IEnumerable<DiagnosticAnalyzer> GetDiagnosticAnalyzers()
             {
@@ -362,6 +365,269 @@ public class Hud2 : MonoBehaviour
             await new AllRulesTest(Allocation("new List<int>", "Update", 0))
                 .WithSources(("/A.cs", fileA), ("/B.cs", fileB))
                 .WithEditorConfig("[A.cs]\nobject_pool_linter.excluded_types_regex = ^Hud")
+                .RunAsync();
+        }
+
+        // --- T20: `new` of a delegate type ---
+
+        // `new Action(...)` is an object creation whatever it wraps. OPL001 reports it under the delegate
+        // type's name; OPL002 leaves it alone, so the same allocation is not reported twice, even when
+        // the lambda inside captures.
+        [Theory]
+        [InlineData("new Action(() => {})", "new Action")]
+        [InlineData("new Action(delegate { })", "new Action")]
+        [InlineData("new Action(Spawn)", "new Action")]
+        [InlineData("new Action(Tick)", "new Action")]
+        [InlineData("new Func<int>(() => wave)", "new Func<int>")]
+        [InlineData("new Func<int, int>(x => x * 2)", "new Func<int, int>")]
+        public async Task NewDelegate_ReportsAsObjectCreationOnly(string creation, string allocation)
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    int wave;
+
+    void Spawn() { }
+    static void Tick() { }
+
+    void Update()
+    {
+        var callback = {|#0:" + creation + @"|};
+    }
+}
+";
+
+            await new AllRulesTest(Allocation(allocation, "Update", 0))
+                .WithSources(("/Spawner.cs", source))
+                .RunAsync();
+        }
+
+        // --- T21: lambdas that capture nothing ---
+
+        // The compiler caches a lambda that captures nothing in a static field, so it allocates once.
+        // Reading a constant, a static field or calling a static method is not a capture, and neither is
+        // a non-capturing lambda nested inside another one.
+        [Theory]
+        [InlineData("Func<int> f = () => 42;")]
+        [InlineData("Func<int> f = static () => 42;")]
+        [InlineData("Func<int, int> f = x => x * 2;")]
+        [InlineData("Func<int> f = () => Limit;")]
+        [InlineData("Func<int> f = () => shared;")]
+        [InlineData("Func<int> f = () => Math.Max(1, 2);")]
+        [InlineData("Func<int> f = () => { Func<int> inner = () => 1; return inner(); };")]
+        [InlineData("Action f = delegate { };")]
+        [InlineData("Run(() => 42);")]
+        public async Task NonCapturingLambda_NoRuleReports(string statement)
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    const int Limit = 10;
+    static int shared;
+
+    static void Run(Func<int> f) { }
+
+    void Update()
+    {
+        " + statement + @"
+    }
+}
+";
+
+            await new AllRulesTest()
+                .WithSources(("/Spawner.cs", source))
+                .RunAsync();
+        }
+
+        // --- T22: static method groups on a class that is not a MonoBehaviour ---
+
+        private const string HelperSource = @"
+public static class Helper
+{
+    public static void Spawn() { }
+    public static int Twice(int x) => x * 2;
+}
+
+public class Pool
+{
+    public static void Warm() { }
+}
+";
+
+        // From C# 11 the compiler caches the delegate for a static method group wherever the method is
+        // declared: here on a static class and on a plain class, in another file.
+        [Theory]
+        [InlineData("Action f = Helper.Spawn;", LanguageVersion.CSharp11)]
+        [InlineData("Action f = Helper.Spawn;", LanguageVersion.Latest)]
+        [InlineData("Func<int, int> f = Helper.Twice;", LanguageVersion.CSharp11)]
+        [InlineData("Action f = Pool.Warm;", LanguageVersion.CSharp11)]
+        [InlineData("Run(Helper.Spawn);", LanguageVersion.CSharp11)]
+        public async Task StaticMethodGroupOnPlainClass_UnderCSharp11_NoRuleReports(string statement, LanguageVersion languageVersion)
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    static void Run(Action f) { }
+
+    void Update()
+    {
+        " + statement + @"
+    }
+}
+";
+
+            await new AllRulesTest { LanguageVersion = languageVersion }
+                .WithSources(("/Helper.cs", HelperSource), ("/Spawner.cs", source))
+                .RunAsync();
+        }
+
+        // C# 10 is the last version that allocates a new delegate for the same method group.
+        [Fact]
+        public async Task StaticMethodGroupOnPlainClass_UnderCSharp10_Reports()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    void Update()
+    {
+        Action f = {|#0:Helper.Spawn|};
+    }
+}
+";
+
+            await new AllRulesTest(Hidden("delegate for Spawn()", "Update", 0)) { LanguageVersion = LanguageVersion.CSharp10 }
+                .WithSources(("/Helper.cs", HelperSource), ("/Spawner.cs", source))
+                .RunAsync();
+        }
+
+        // --- T23: a params parameter given no arguments ---
+
+        // An empty expansion passes Array.Empty<T>(), which allocates nothing. So does passing
+        // Array.Empty<T>() yourself.
+        [Theory]
+        [InlineData("Log(\"ready\");")]
+        [InlineData("Helper.Show();")]
+        [InlineData("Pick<int>();")]
+        [InlineData("logger.Write(\"ready\");")]
+        [InlineData("Helper.Show(Array.Empty<string>());")]
+        public async Task ParamsWithNoArguments_NoRuleReports(string statement)
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public static class Helper
+{
+    public static void Show(params string[] names) { }
+}
+
+public class Logger
+{
+    public void Write(string format, params object[] args) { }
+}
+
+public class Hud : MonoBehaviour
+{
+    readonly Logger logger = new Logger();
+
+    static void Log(string format, params object[] args) { }
+    static T Pick<T>(params T[] items) => default;
+
+    void Update()
+    {
+        " + statement + @"
+    }
+}
+";
+
+            await new AllRulesTest()
+                .WithSources(("/Hud.cs", source))
+                .RunAsync();
+        }
+
+        // --- T24: Enumerable.Empty<T>() ---
+
+        // Enumerable.Empty<T>() returns a cached instance. It is not reported on its own, and a LINQ
+        // call on top of it is reported without it in the chain.
+        [Theory]
+        [InlineData("var none = Enumerable.Empty<int>();")]
+        [InlineData("IEnumerable<string> none = Enumerable.Empty<string>();")]
+        [InlineData("Consume(Enumerable.Empty<int>());")]
+        [InlineData("var none = System.Linq.Enumerable.Empty<Squad>();")]
+        public async Task EnumerableEmpty_NoRuleReports(string statement)
+        {
+            var source = @"
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    static void Consume(IEnumerable<int> items) { }
+
+    void Update()
+    {
+        " + statement + @"
+    }
+}
+";
+
+            await new AllRulesTest()
+                .WithSources(("/Squad.cs", source))
+                .RunAsync();
+        }
+
+        [Fact]
+        public async Task EnumerableEmpty_UnderStaticUsing_NoRuleReports()
+        {
+            var source = @"
+using static System.Linq.Enumerable;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    void Update()
+    {
+        var none = Empty<int>();
+    }
+}
+";
+
+            await new AllRulesTest()
+                .WithSources(("/Squad.cs", source))
+                .RunAsync();
+        }
+
+        [Fact]
+        public async Task EnumerableEmpty_LinqCallOnTop_ReportsWithoutEmptyInTheChain()
+        {
+            var source = @"
+using System.Linq;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    void Update()
+    {
+        var alive = {|#0:Enumerable.Empty<int>().Where(h => h > 0).ToList()|};
+    }
+}
+";
+
+            await new AllRulesTest(Hidden("LINQ Where().ToList()", "Update", 0))
+                .WithSources(("/Squad.cs", source))
                 .RunAsync();
         }
     }
