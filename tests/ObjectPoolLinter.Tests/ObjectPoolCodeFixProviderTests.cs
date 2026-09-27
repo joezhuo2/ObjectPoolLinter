@@ -1378,6 +1378,174 @@ public class MyBehaviour : MonoBehaviour
             await test.RunAsync();
         }
 
+        // T62: the comment is followed by the line ending the file already uses, on every line of a
+        // two-line comment, whatever the line endings of the checkout.
+        [Theory]
+        [InlineData("\n")]
+        [InlineData("\r\n")]
+        public async Task AddPoolingComment_UsesTheLineEndingOfTheFile(string endOfLine)
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var buffer = {|#0:new int[4]|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: avoid this per-frame array allocation. Reuse a cached buffer, or rent one
+        // from ArrayPool<T>.Shared - Rent can return a longer array, and it must be Returned.
+        var buffer = {|#0:new int[4]|};
+    }
+}
+";
+
+            await VerifyFixAsync(
+                LineEndings.With(source, endOfLine),
+                LineEndings.With(fixedSource, endOfLine),
+                AddPoolingCommentKey,
+                diagnosticRemains: true);
+        }
+
+        // T62: a file on a single line with no trailing newline has no line ending to copy, so the
+        // comment falls back to CRLF and the statement moves to the next line.
+        [Fact]
+        public async Task AddPoolingComment_SingleLineFileWithoutNewline_FallsBackToCrLf()
+        {
+            var source =
+                "using UnityEngine; public class MyBehaviour : MonoBehaviour { void Update() { " +
+                "var list = {|#0:new System.Collections.Generic.List<int>()|}; } }";
+
+            var fixedSource =
+                "using UnityEngine; public class MyBehaviour : MonoBehaviour { void Update() { " +
+                "// TODO: use an object pool to avoid per-frame allocation\r\n" +
+                "var list = {|#0:new System.Collections.Generic.List<int>()|}; } }";
+
+            await VerifyFixAsync(source, fixedSource, AddPoolingCommentKey, diagnosticRemains: true);
+        }
+
+        // T63: the TODO comment leaves the allocation in place, so the pool rewrite is still offered
+        // afterwards, and applying it keeps the comment above the statement.
+        [Fact]
+        public async Task AddPoolingCommentThenReplaceWithPoolGet_OnLocalDeclaration_BothApply()
+        {
+            const string pool = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp) => null;
+}
+";
+
+            var source = pool + @"
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = {|#0:new Enemy(10)|};
+    }
+}
+";
+
+            var commented = pool + @"
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        var enemy = {|#0:new Enemy(10)|};
+    }
+}
+";
+
+            var pooled = pool + @"
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        var enemy = EnemyPool.Get(10);
+    }
+}
+";
+
+            await VerifyFixAsync(source, commented, AddPoolingCommentKey, diagnosticRemains: true);
+            await VerifyFixAsync(commented, pooled, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        // T63: when the allocation is the whole statement, the comment lands in the leading trivia of
+        // the `new` token itself. The pool rewrite replaces that node, and must carry the comment
+        // over rather than drop it.
+        [Fact]
+        public async Task AddPoolingCommentThenReplaceWithPoolGet_OnExpressionStatement_KeepsTheComment()
+        {
+            const string pool = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int hp) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int hp) => null;
+}
+";
+
+            var source = pool + @"
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        {|#0:new Enemy(10)|};
+    }
+}
+";
+
+            var commented = pool + @"
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        {|#0:new Enemy(10)|};
+    }
+}
+";
+
+            var pooled = pool + @"
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        // TODO: use an object pool to avoid per-frame allocation
+        EnemyPool.Get(10);
+    }
+}
+";
+
+            await VerifyFixAsync(source, commented, AddPoolingCommentKey, diagnosticRemains: true);
+            await VerifyFixAsync(commented, pooled, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
         private static async Task<Document> ApplyAddPoolingCommentFixAsync(string source)
         {
             var (document, actions) = await RegisterFixesCoreAsync(source);

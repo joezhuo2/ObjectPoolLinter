@@ -209,6 +209,9 @@ namespace ObjectPoolLinter
             return string.Join("\n", lines);
         }
 
+        // The line ending the file already uses, taken from its first line break. A file with none,
+        // such as a single line with no trailing newline, gets "\r\n". Every fix writes through this
+        // so that new lines match the file.
         internal static string GetEndOfLine(SyntaxNode root)
         {
             var existing = root.DescendantTrivia(descendIntoTrivia: true)

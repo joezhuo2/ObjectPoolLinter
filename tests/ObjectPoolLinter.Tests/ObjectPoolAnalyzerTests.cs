@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -277,6 +277,116 @@ public class MyBehaviour : MonoBehaviour
 public class PlainClass
 {
     void Update()
+    {
+        var list = new System.Collections.Generic.List<int>();
+    }
+}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        // T64: a property getter is not a method, so it is never a Unity message, whatever it is
+        // called and however hot the code reading it is. Update reads the property to make sure
+        // the analyzer does not follow the call.
+        [Theory]
+        [InlineData("List<int> Value => new List<int>();")]
+        [InlineData("List<int> Value { get { return new List<int>(); } }")]
+        [InlineData("List<int> Value { get => new List<int>(); }")]
+        [InlineData("List<int> Update => new List<int>();")]
+        public async Task NewObjectInPropertyGetterOfMonoBehaviour_DoesNotReport(string property)
+        {
+            var source = $@"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{{
+    {property}
+
+    void LateUpdate()
+    {{
+        var count = {(property.Contains("Update =>") ? "Update" : "Value")}.Count;
+    }}
+}}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        // T65: constructors, static constructors, constructor initializers and field initializers
+        // run when the object is created, not every frame, so none of them is a hot path even on a
+        // MonoBehaviour that also has an Update.
+        [Theory]
+        [InlineData("public MyBehaviour() { var list = new List<int>(); }")]
+        [InlineData("static MyBehaviour() { var list = new List<int>(); }")]
+        [InlineData("public MyBehaviour() : this(new List<int>()) { } public MyBehaviour(List<int> list) { }")]
+        [InlineData("private List<int> _list = new List<int>();")]
+        public async Task NewObjectInMonoBehaviourConstructor_DoesNotReport(string member)
+        {
+            var source = $@"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{{
+    {member}
+
+    void Update()
+    {{
+    }}
+}}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        // T68: a class called MonoBehaviour outside UnityEngine is not Unity's, even when it derives
+        // from UnityEngine.Object and `using UnityEngine;` puts the real one in scope. Inside
+        // namespace Game the simple name binds to Game.MonoBehaviour.
+        [Theory]
+        [InlineData("Update")]
+        [InlineData("LateUpdate")]
+        [InlineData("FixedUpdate")]
+        [InlineData("OnGUI")]
+        public async Task NewObjectInMessageOfMonoBehaviourOutsideUnityEngine_DoesNotReport(string messageName)
+        {
+            var source = $@"
+using UnityEngine;
+
+namespace Game
+{{
+    public class MonoBehaviour : Object {{ }}
+
+    public class MyBehaviour : MonoBehaviour
+    {{
+        void {messageName}()
+        {{
+            var list = new System.Collections.Generic.List<int>();
+        }}
+    }}
+}}
+";
+
+            await VerifyAnalyzerAsync(source);
+        }
+
+        // T68: an explicit interface implementation named after a Unity message is not the message.
+        // Its name is ITicker.Update, and Unity never calls it.
+        [Fact]
+        public async Task NewObjectInExplicitInterfaceUpdate_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public interface ITicker
+{
+    void Update();
+}
+
+public class MyBehaviour : MonoBehaviour, ITicker
+{
+    void ITicker.Update()
     {
         var list = new System.Collections.Generic.List<int>();
     }

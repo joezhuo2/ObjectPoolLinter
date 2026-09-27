@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeFixes;
@@ -55,8 +55,11 @@ namespace UnityEngine
 
         // --- F23: generate the pool ---
 
-        [Fact]
-        public async Task GeneratePool_WritesThePoolAndRoutesTheAllocationThroughIt()
+        // T62: run with both line endings, so every line the fix writes has to match the file.
+        [Theory]
+        [InlineData("\n")]
+        [InlineData("\r\n")]
+        public async Task GeneratePool_WritesThePoolAndRoutesTheAllocationThroughIt(string endOfLine)
         {
             var source = @"
 using UnityEngine;
@@ -142,7 +145,11 @@ public static class EnemyPool
 }
 ";
 
-            await VerifyFixAsync(source, fixedSource, GeneratePoolKey, diagnosticRemains: false);
+            await VerifyFixAsync(
+                LineEndings.With(source, endOfLine),
+                LineEndings.With(fixedSource, endOfLine),
+                GeneratePoolKey,
+                diagnosticRemains: false);
         }
 
         [Fact]
@@ -310,10 +317,74 @@ public class MyBehaviour : MonoBehaviour
             await VerifyNoFixAsync(source, GeneratePoolKey);
         }
 
+        // T62: a file on a single line with no trailing newline has no line ending to copy, so the
+        // pool class is written with CRLF.
+        [Fact]
+        public async Task GeneratePool_SingleLineFileWithoutNewline_FallsBackToCrLf()
+        {
+            var source =
+                "using UnityEngine; public class Enemy { } " +
+                "public class MyBehaviour : MonoBehaviour { void Update() { var enemy = {|#0:new Enemy()|}; } }";
+
+            // The pool starts on the line after the file's only line, with no blank line between,
+            // because the class it follows has no trailing newline to separate them.
+            var pool = @"
+/// <summary>
+/// Object pool for <c>Enemy</c>. Not thread-safe, which is enough for
+/// Unity's main-thread messages. Every instance taken out has to be handed back once.
+/// </summary>
+public static class EnemyPool
+{
+    private static readonly System.Collections.Generic.Stack<Enemy> s_free = new System.Collections.Generic.Stack<Enemy>();
+
+    /// <summary>How many instances are waiting in the pool.</summary>
+    public static int CountInactive
+    {
+        get { return s_free.Count; }
+    }
+
+    /// <summary>Takes an instance out of the pool, or constructs one when the pool is empty.</summary>
+    public static Enemy Get()
+    {
+        if (s_free.Count == 0) return new Enemy();
+
+        Enemy instance = s_free.Pop();
+        // TODO: put instance back into the state new Enemy() would leave it in.
+        return instance;
+    }
+
+    /// <summary>Hands an instance back to the pool. Return each instance exactly once.</summary>
+    public static void Return(Enemy instance)
+    {
+        if (instance == null) throw new System.ArgumentNullException(""instance"");
+
+        // TODO: release whatever instance holds on to before it waits in the pool.
+        s_free.Push(instance);
+    }
+
+    /// <summary>Drops every instance waiting in the pool.</summary>
+    public static void Clear()
+    {
+        s_free.Clear();
+    }
+}
+";
+
+            var fixedSource =
+                "using UnityEngine; public class Enemy { } " +
+                "public class MyBehaviour : MonoBehaviour { void Update() { var enemy = EnemyPool.Get(); } }" +
+                LineEndings.With(pool, "\r\n");
+
+            await VerifyFixAsync(source, fixedSource, GeneratePoolKey, diagnosticRemains: false);
+        }
+
         // --- F24: rent the array ---
 
-        [Fact]
-        public async Task RentFromArrayPool_WrapsTheUseInTryFinally()
+        // T62: run with both line endings, so every line the fix writes has to match the file.
+        [Theory]
+        [InlineData("\n")]
+        [InlineData("\r\n")]
+        public async Task RentFromArrayPool_WrapsTheUseInTryFinally(string endOfLine)
         {
             var source = @"
 using UnityEngine;
@@ -355,7 +426,11 @@ public class MyBehaviour : MonoBehaviour
 }
 ";
 
-            await VerifyFixAsync(source, fixedSource, RentFromArrayPoolKey, diagnosticRemains: false);
+            await VerifyFixAsync(
+                LineEndings.With(source, endOfLine),
+                LineEndings.With(fixedSource, endOfLine),
+                RentFromArrayPoolKey,
+                diagnosticRemains: false);
         }
 
         [Fact]

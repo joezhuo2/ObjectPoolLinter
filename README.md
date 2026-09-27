@@ -272,6 +272,10 @@ The fix is **not** offered when the allocation carries an object or collection i
 method call and dropping it would silently lose code. Use the TODO-comment fix there and rewrite the
 initializer by hand.
 
+The TODO-comment fix leaves the diagnostic in place, so you can add the comment first and apply the
+pool rewrite later; the comment stays above the statement. Every fix, OPL002 and OPL003 included,
+writes new lines with the file's own line ending (LF or CRLF).
+
 The pool fixes are also **not** offered for array allocations (`new int[4]`, `new[] { 1, 2 }`).
 Those get the third fix instead, and only where it is safe: a local buffer, declared with its length,
 that the rest of its block only indexes and reads `Length` from. The length moves into its own local

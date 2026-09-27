@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.6] - 2026-09-26
+
+Tests and documentation, plus one internal cleanup: analyzer and code fix behaviour is unchanged from
+1.6.5.
+
+### Added
+- **Line-ending tests** for the OPL001 code fixes. The TODO-comment fix (including the two-line array
+  comment), the pool generation fix and the `ArrayPool` rent fix now run on the same source with LF
+  and with CRLF line endings, and every line they write must match the file. Two more tests cover a
+  file on a single line with no trailing newline, where there is no line ending to copy: the comment
+  fix and the generated pool fall back to CRLF.
+- **The TODO-comment fix followed by the pool rewrite.** Both fixes applied in turn to the same
+  allocation: the rewrite is still offered after the comment, and it keeps the comment above the
+  statement, for a local declaration and for `new Enemy(10);` as a whole statement, where the comment
+  sits on the `new` token the rewrite replaces. Only this test fails if the rewrite drops the node's
+  leading trivia.
+- **OPL001 negative tests** in `ObjectPoolAnalyzerTests.cs`:
+  - **Property getters** on a MonoBehaviour (expression-bodied, block and `get =>` forms, and a
+    property named `Update`), with `LateUpdate` reading the property every frame.
+  - **Constructors**: an instance constructor, a static constructor, a `: this(new List<int>())`
+    initializer and a field initializer, on a MonoBehaviour that also has an `Update`.
+  - **A `MonoBehaviour` outside `UnityEngine`**: `Game.MonoBehaviour`, deriving from
+    `UnityEngine.Object` with `using UnityEngine;` in scope, for `Update`, `LateUpdate`, `FixedUpdate`
+    and `OnGUI`; and an explicit interface implementation `void ITicker.Update()` on a real
+    MonoBehaviour.
+
+### Changed
+- The TODO-comment fix reads the file's line ending through the shared
+  `CodeFixSupport.GetEndOfLine` instead of its own copy of the same lookup. The result is the same.
+- [docs/rules/OPL001.md](docs/rules/OPL001.md#cause) lists what is not a hot path: property getters,
+  constructors and field initializers, explicit interface implementations, and a `MonoBehaviour`
+  outside `UnityEngine`. Its [Code fixes](docs/rules/OPL001.md#code-fixes) section and the
+  [README](README.md#code-fixes) say that the comment fix can be followed by the pool rewrite, and
+  that fixes write the file's own line ending, with CRLF for a file that has none.
+
 ## [v1.6.5] - 2026-09-26
 
 Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1078,7 +1113,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.5...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.6...HEAD
+[v1.6.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.5...v1.6.6
 [v1.6.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.4...v1.6.5
 [v1.6.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.3...v1.6.4
 [v1.6.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.2...v1.6.3

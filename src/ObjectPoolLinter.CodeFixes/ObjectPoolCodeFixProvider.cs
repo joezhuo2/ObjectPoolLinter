@@ -260,7 +260,7 @@ namespace ObjectPoolLinter
 
             var leadingTrivia = statement.GetLeadingTrivia();
             var indentation = leadingTrivia.LastOrDefault(t => t.IsKind(SyntaxKind.WhitespaceTrivia));
-            var endOfLine = GetEndOfLine(root);
+            var endOfLine = SyntaxFactory.EndOfLine(CodeFixSupport.GetEndOfLine(root));
 
             var commentTrivia = SyntaxFactory.TriviaList();
             foreach (var line in GetPoolingCommentLines(node, isBoxing))
@@ -296,16 +296,6 @@ namespace ObjectPoolLinter
                 };
 
             return new[] { "// TODO: use an object pool to avoid per-frame allocation" };
-        }
-
-        private static SyntaxTrivia GetEndOfLine(SyntaxNode root)
-        {
-            var existing = root.DescendantTrivia(descendIntoTrivia: true)
-                .FirstOrDefault(t => t.IsKind(SyntaxKind.EndOfLineTrivia));
-
-            return existing.IsKind(SyntaxKind.EndOfLineTrivia)
-                ? SyntaxFactory.EndOfLine(existing.ToFullString())
-                : SyntaxFactory.CarriageReturnLineFeed;
         }
     }
 }
