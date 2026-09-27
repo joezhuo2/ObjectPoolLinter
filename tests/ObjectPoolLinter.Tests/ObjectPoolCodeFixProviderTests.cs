@@ -31,6 +31,8 @@ namespace UnityEngine
 
         private const string AddPoolingCommentKey = "ObjectPoolLinterAddPoolingComment";
         private const string ReplaceWithPoolGetKey = "ObjectPoolLinterReplaceWithPoolGet";
+        private const string GeneratePoolKey = "ObjectPoolLinterGeneratePool";
+        private const string RentFromArrayPoolKey = "ObjectPoolLinterRentFromArrayPool";
 
         private static Task VerifyFixAsync(string source, string fixedSource, string equivalenceKey, bool diagnosticRemains)
         {
@@ -511,6 +513,284 @@ public class MyBehaviour : MonoBehaviour
 
             Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
             Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        // A pool whose Get takes the original makes the pool-get rewrite look applicable to
+        // Instantiate, so its absence here is down to the fix handling only `new` expressions.
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedForInstantiate()
+        {
+            var source = @"
+using UnityEngine;
+
+public class ObjectPool
+{
+    public static Object Get(Object original) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    public Object prefab;
+    void Update()
+    {
+        var clone = Object.Instantiate(prefab);
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == GeneratePoolKey);
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == RentFromArrayPoolKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_MatchesAGetWhoseTrailingParameterIsOptional()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int x) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int x, int y = 0) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = {|#0:new Enemy(5)|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int x) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int x, int y = 0) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = EnemyPool.Get(5);
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenArgumentsExceedAGetWithOptionalParameters()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(int x, int y, int z) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int x, int y = 0) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = new Enemy(1, 2, 3);
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("1")]
+        [InlineData("1, 2, 3")]
+        public async Task ReplaceWithPoolGet_MatchesAParamsGetWithAnyNumberOfVariadicArguments(string arguments)
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(params int[] items) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(params int[] items) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = {|#0:new Enemy(" + arguments + @")|};
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class Enemy
+{
+    public Enemy(params int[] items) { }
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(params int[] items) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = EnemyPool.Get(" + arguments + @");
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, ReplaceWithPoolGetKey, diagnosticRemains: false);
+        }
+
+        [Fact]
+        public async Task ReplaceWithPoolGet_IsNotOfferedWhenAParamsGetStillNeedsItsLeadingArgument()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public class EnemyPool
+{
+    public static Enemy Get(int first, params int[] rest) => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = new Enemy();
+    }
+}
+";
+
+            var actions = await RegisterFixesAsync(source);
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.Contains(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+        }
+
+        // OPL001 reports only `new` and UnityEngine.Object.Instantiate, so a call to a user factory
+        // never gets the diagnostic from the analyzer. The comment fix still has to handle it, since
+        // it works from the statement around whatever node an OPL001 diagnostic points at (a
+        // diagnostic from an older analyzer build, or one reported by hand in a ruleset test).
+        [Fact]
+        public async Task ObjectPoolAnalyzer_DoesNotReportAUserDefinedStaticFactory()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public static class Helper
+{
+    public static Enemy Create() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = Helper.Create();
+    }
+}
+";
+
+            var test = new Test
+            {
+                TestCode = source,
+                ReferenceAssemblies = TestReferenceAssemblies.Default,
+            };
+            test.TestState.Sources.Add(UnityStub);
+
+            await test.RunAsync();
+        }
+
+        [Fact]
+        public async Task AddPoolingComment_IsOfferedForAUserDefinedStaticMethodInvocation()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Enemy
+{
+}
+
+public class EnemyPool
+{
+    public static Enemy Get() => null;
+}
+
+public static class Helper
+{
+    public static Enemy Create() => null;
+}
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var enemy = Helper.Create();
+    }
+}
+";
+
+            var (document, actions) = await RegisterFixesCoreAsync(source, diagnosticAt: "Helper.Create()");
+
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == ReplaceWithPoolGetKey);
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == GeneratePoolKey);
+            Assert.DoesNotContain(actions, a => a.EquivalenceKey == RentFromArrayPoolKey);
+            var commentAction = Assert.Single(actions, a => a.EquivalenceKey == AddPoolingCommentKey);
+
+            var operations = await commentAction.GetOperationsAsync(CancellationToken.None);
+            var changedSolution = operations.OfType<ApplyChangesOperation>().Single().ChangedSolution;
+            var text = (await changedSolution.GetDocument(document.Id)!.GetTextAsync()).ToString();
+
+            Assert.Contains(
+                "        // TODO: use an object pool to avoid per-frame allocation\n        var enemy = Helper.Create();",
+                text.Replace("\r\n", "\n"));
         }
 
         [Fact]
@@ -1116,7 +1396,11 @@ public class MyBehaviour : MonoBehaviour
             return actions;
         }
 
-        private static async Task<(Document Document, List<CodeAction> Actions)> RegisterFixesCoreAsync(string source)
+        // With diagnosticAt, the OPL001 diagnostic is placed on the first occurrence of that text
+        // instead of coming from the analyzer, for nodes the analyzer does not report itself.
+        private static async Task<(Document Document, List<CodeAction> Actions)> RegisterFixesCoreAsync(
+            string source,
+            string? diagnosticAt = null)
         {
             using var workspace = new AdhocWorkspace();
 
@@ -1133,7 +1417,27 @@ public class MyBehaviour : MonoBehaviour
             var withAnalyzers = compilation!.WithAnalyzers(
                 ImmutableArray.Create<DiagnosticAnalyzer>(new ObjectPoolAnalyzer()));
 
-            var diagnostic = Assert.Single(await withAnalyzers.GetAnalyzerDiagnosticsAsync(CancellationToken.None));
+            var analyzerDiagnostics = await withAnalyzers.GetAnalyzerDiagnosticsAsync(CancellationToken.None);
+
+            Diagnostic diagnostic;
+            if (diagnosticAt == null)
+            {
+                diagnostic = Assert.Single(analyzerDiagnostics);
+            }
+            else
+            {
+                Assert.Empty(analyzerDiagnostics);
+
+                var tree = await document.GetSyntaxTreeAsync();
+                var start = source.IndexOf(diagnosticAt, System.StringComparison.Ordinal);
+                Assert.True(start >= 0, "'" + diagnosticAt + "' is not in the source");
+
+                diagnostic = Diagnostic.Create(
+                    new ObjectPoolAnalyzer().SupportedDiagnostics[0],
+                    Location.Create(tree!, new Microsoft.CodeAnalysis.Text.TextSpan(start, diagnosticAt.Length)),
+                    "Create",
+                    "Update");
+            }
 
             var actions = new List<CodeAction>();
             var context = new CodeFixContext(

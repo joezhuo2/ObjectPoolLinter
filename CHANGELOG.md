@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.5] - 2026-09-26
+
+Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.6.4.
+
+### Added
+- **OPL001 code fix tests** in `ObjectPoolCodeFixProviderTests.cs`:
+  - **No pool rewrite for `Instantiate`.** With a type called `ObjectPool` exposing
+    `static Object Get(Object original)` in scope, an `Object.Instantiate(prefab)` diagnostic offers
+    only the TODO-comment fix: no pool `Get()` rewrite, no generated pool, no `ArrayPool` rent.
+  - **Optional parameters on the pool's `Get`.** `EnemyPool.Get(int x, int y = 0)` matches
+    `new Enemy(5)`, and the rewrite is `EnemyPool.Get(5)`; `new Enemy(1, 2, 3)` gets no rewrite.
+  - **`params` on the pool's `Get`.** `EnemyPool.Get(params int[] items)` matches `new Enemy()`,
+    `new Enemy(1)` and `new Enemy(1, 2, 3)`; `Get(int first, params int[] rest)` does not match
+    `new Enemy()`. Loosening either branch of the argument-count check fails these tests.
+  - **The TODO-comment fix on a user-defined static method.** OPL001 does not report
+    `Helper.Create()` (a test pins that), but given an OPL001 diagnostic on that call the comment
+    fix is the only one offered, and it inserts the object-pool TODO above the statement.
+
+### Changed
+- [README.md](README.md#the-pool-contract) spells out how the pool's `Get` is matched: by argument
+  count only, with examples for optional and `params` parameters, and states that an `Instantiate`
+  call gets the TODO-comment fix and nothing else.
+  [docs/rules/OPL001.md](docs/rules/OPL001.md#code-fixes) says the same.
+
 ## [v1.6.4] - 2026-09-26
 
 Tests, CI and documentation only: the analyzers, code fixes, generator and suppressor are unchanged
@@ -1053,7 +1078,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.4...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.5...HEAD
+[v1.6.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.4...v1.6.5
 [v1.6.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.3...v1.6.4
 [v1.6.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.2...v1.6.3
 [v1.6.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.1...v1.6.2

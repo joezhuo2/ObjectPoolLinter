@@ -374,7 +374,7 @@ A pool satisfies the contract when all of these hold at the allocation site:
 | Visibility | Resolvable by simple name at the allocation site: the same namespace, an enclosing type, or a namespace already imported by a `using`. The fix never adds a `using` and never qualifies the name it writes. |
 | Generic arity | Must match the allocated type's type-argument count, and the type arguments are copied over. `new List<int>()` becomes `ListPool<int>.Get()`, so `ListPool` has to be declared as `ListPool<T>`. |
 | `Get` member | A **static** method named exactly `Get`, accessible from the allocation site. An instance `Get` on a pool field, a singleton or an `ObjectPool<T>` instance does not qualify. |
-| `Get` arity | Must accept the constructor's argument count, because arguments are forwarded unchanged: `new Enemy(hp)` needs a `Get` overload taking one argument. Optional parameters and `params` are honoured. |
+| `Get` arity | Must accept the constructor's argument count, because arguments are forwarded unchanged: `new Enemy(hp)` needs a `Get` overload taking one argument. Only the count is compared, not the parameter types. Optional parameters and `params` are honoured: `Get(int x, int y = 0)` accepts one or two arguments, `Get(params int[] items)` accepts any number including none, and `Get(int first, params int[] rest)` needs at least one. |
 
 Two things the fix does not check:
 
@@ -382,6 +382,9 @@ Two things the fix does not check:
   the lookup, and the rewritten call will not compile. That is a loud failure, not a silent one.
 - **The lifetime.** Nothing is inserted to hand the object back. Writing the release call is yours to
   do; a pool nothing is returned to is a leak with extra steps.
+
+The contract applies to `new` expressions only. An `Instantiate` call gets the TODO-comment fix and
+nothing else, even when a type called `ObjectPool` with a matching static `Get` is in scope.
 
 Target-typed `new()` is handled the same way: the pool name comes from the type the expression is
 converted to, so `Enemy e = new();` looks for `EnemyPool` just as `new Enemy()` does.
