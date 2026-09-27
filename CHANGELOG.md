@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.8] - 2026-09-27
+
+Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.6.7.
+
+### Added
+- **Compound assignment on types other than string** in `IntegrationTests.cs`, run against OPL001,
+  OPL002 and OPL003 together: `+=`, `-=`, `*=`, `|=` and `<<=` on an `int`, `+= 'a'`, `+=` on a
+  `float`, a `long` given an `int`, an `int?`, a `[Flags]` enum, a `List<int>` element, an array
+  element, a `Dictionary<string, int>` entry, and a struct with a user-defined `operator +`. No rule
+  reports. A companion test puts `log += "tick"` between two numeric compound assignments and expects
+  exactly one `string concatenation`.
+- **Interpolated strings with no holes** in `IntegrationTests.cs`: `$"no holes"`, `$@"C:	emp"`,
+  `$"{{escaped}}"` and `Show($"ready")` under C# 9 and the latest version, a raw `$"""no holes"""`,
+  and `$"{Prefix}-hud"` and `$"{Prefix}{Suffix}"` with `const string` holes. No rule reports. With a
+  `string` field in one hole, `$"{Prefix}{suffix}"` reports `string interpolation` under both versions.
+- **OPL003 tests** in `UnityApiAllocationAnalyzerTests.cs`:
+  - **Cold paths**: `Camera.allCameras`, `Input.touches`, `mesh.vertices` and `tag` read in `Awake`,
+    `Start`, `OnEnable`, `OnDisable`, `OnDestroy`, `OnTriggerEnter(Collider)`, a helper method and an
+    `Update(int)` overload are not reported.
+  - **Single-object properties**: `gameObject`, `transform`, `gameObject.transform`,
+    `transform.gameObject`, the same through a `Collider` field, `transform.parent` and `Camera.main`
+    are not reported.
+  - **`GameObject.tag`**: `gameObject.tag` and `target.tag` on a `GameObject` field in `Update` each
+    report `GameObject.tag` returning `string`; `CompareTag` and writing `tag` do not. The same read in
+    `Start` is not reported.
+
+### Changed
+- [docs/rules/OPL002.md](docs/rules/OPL002.md#what-is-not-reported-and-why) lists the interpolated
+  string forms compiled to a literal, including `const string` holes under C# 10, and says that compound
+  assignment is reported only for `+=` on a string.
+- [docs/rules/OPL003.md](docs/rules/OPL003.md#cause) says which type name the message uses for `tag`
+  on a `GameObject` and on the MonoBehaviour itself, and
+  [What is not reported](docs/rules/OPL003.md#what-is-not-reported-and-why) now lists reads outside a
+  hot path and the single-object properties `gameObject`, `transform` and `Camera.main`.
+
 ## [v1.6.7] - 2026-09-27
 
 Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1147,7 +1183,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.7...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.8...HEAD
+[v1.6.8]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.7...v1.6.8
 [v1.6.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.6...v1.6.7
 [v1.6.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.5...v1.6.6
 [v1.6.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.4...v1.6.5

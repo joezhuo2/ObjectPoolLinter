@@ -12,7 +12,8 @@ namespace ObjectPoolLinter.Tests
 {
     // T1-T3: the analyzers running together over one compilation, over several files, and with
     // .editorconfig sections that apply to some files only. T20-T24: delegate, params and LINQ edge
-    // cases, run against all three rules so that a case one rule skips is not reported by another.
+    // cases, and T25-T26: compound assignments and interpolated strings that allocate nothing, run
+    // against all three rules so that a case one rule skips is not reported by another.
     public class IntegrationTests
     {
         private const string UnityStub = @"
@@ -628,6 +629,168 @@ public class Squad : MonoBehaviour
 
             await new AllRulesTest(Hidden("LINQ Where().ToList()", "Update", 0))
                 .WithSources(("/Squad.cs", source))
+                .RunAsync();
+        }
+
+        // --- T25: compound assignment on a type that is not string ---
+
+        // Only `+=` on a string builds a new string. Arithmetic and bitwise compound assignments on
+        // numbers, enums, nullable numbers, list, array and dictionary elements, and a struct with a
+        // user-defined operator allocate nothing, and no widening conversion in them boxes.
+        [Theory]
+        [InlineData("count += 1;")]
+        [InlineData("count -= 1;")]
+        [InlineData("count *= 2;")]
+        [InlineData("count |= 4;")]
+        [InlineData("count <<= 1;")]
+        [InlineData("count += 'a';")]
+        [InlineData("speed += 0.5f;")]
+        [InlineData("ticks += count;")]
+        [InlineData("maybe += 1;")]
+        [InlineData("layers |= Layers.Enemy;")]
+        [InlineData("counts[0] += 1;")]
+        [InlineData("scores[0] += count;")]
+        [InlineData("hits[\"head\"] += 1;")]
+        [InlineData("wallet += wallet;")]
+        public async Task CompoundAssignmentOnNonString_NoRuleReports(string statement)
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+[Flags]
+public enum Layers { None = 0, Player = 1, Enemy = 2 }
+
+public struct Money
+{
+    public int Coins;
+
+    public static Money operator +(Money a, Money b)
+    {
+        a.Coins += b.Coins;
+        return a;
+    }
+}
+
+public class Tally : MonoBehaviour
+{
+    int count;
+    float speed;
+    long ticks;
+    int? maybe;
+    Layers layers;
+    Money wallet;
+    readonly List<int> counts = new List<int>();
+    readonly int[] scores = new int[4];
+    readonly Dictionary<string, int> hits = new Dictionary<string, int>();
+
+    void Update()
+    {
+        " + statement + @"
+    }
+}
+";
+
+            await new AllRulesTest()
+                .WithSources(("/Tally.cs", source))
+                .RunAsync();
+        }
+
+        // The string case next to the others, so the test above cannot pass because OPL002 never
+        // looks at compound assignments at all.
+        [Fact]
+        public async Task CompoundAssignmentOnString_ReportsNextToNumericOnes()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Tally : MonoBehaviour
+{
+    int count;
+    string log = """";
+
+    void Update()
+    {
+        count += 1;
+        {|#0:log += ""tick""|};
+        count *= 2;
+    }
+}
+";
+
+            await new AllRulesTest(Hidden("string concatenation", "Update", 0))
+                .WithSources(("/Tally.cs", source))
+                .RunAsync();
+        }
+
+        // --- T26: interpolated strings with no holes ---
+
+        // `$"text"` with no holes, or whose holes are all constant strings, is compiled to a literal.
+        // The compiler gives a string with no holes a constant value under C# 9 as well, and OPL002
+        // skips it either for that constant value or because it has no interpolation parts, so both
+        // checks have to go before these cases report. Holes of constant strings need C# 10, where
+        // only the constant value check skips them.
+        [Theory]
+        [InlineData("var plain = $\"no holes\";", LanguageVersion.CSharp9)]
+        [InlineData("var plain = $\"no holes\";", LanguageVersion.Latest)]
+        [InlineData("var path = $@\"C:\\temp\";", LanguageVersion.CSharp9)]
+        [InlineData("var path = $@\"C:\\temp\";", LanguageVersion.Latest)]
+        [InlineData("var braces = $\"{{escaped}}\";", LanguageVersion.CSharp9)]
+        [InlineData("var braces = $\"{{escaped}}\";", LanguageVersion.Latest)]
+        [InlineData("Show($\"ready\");", LanguageVersion.CSharp9)]
+        [InlineData("Show($\"ready\");", LanguageVersion.Latest)]
+        [InlineData("var raw = $\"\"\"no holes\"\"\";", LanguageVersion.Latest)]
+        [InlineData("const string label = $\"{Prefix}-hud\";", LanguageVersion.Latest)]
+        [InlineData("var joined = $\"{Prefix}{Suffix}\";", LanguageVersion.Latest)]
+        public async Task InterpolationWithNoHoles_NoRuleReports(string statement, LanguageVersion languageVersion)
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    const string Prefix = ""wave"";
+    const string Suffix = ""-1"";
+
+    static void Show(string text) { }
+
+    void Update()
+    {
+        " + statement + @"
+    }
+}
+";
+
+            await new AllRulesTest { LanguageVersion = languageVersion }
+                .WithSources(("/Hud.cs", source))
+                .RunAsync();
+        }
+
+        // A hole holding a value that is not a constant string still builds a string at run time.
+        [Theory]
+        [InlineData(LanguageVersion.CSharp9)]
+        [InlineData(LanguageVersion.Latest)]
+        public async Task InterpolationWithNonConstantHole_Reports(LanguageVersion languageVersion)
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    const string Prefix = ""wave"";
+    string suffix = ""-1"";
+
+    void Update()
+    {
+        var plain = $""no holes"";
+        var joined = {|#0:$""{Prefix}{suffix}""|};
+    }
+}
+";
+
+            await new AllRulesTest(Hidden("string interpolation", "Update", 0)) { LanguageVersion = languageVersion }
+                .WithSources(("/Hud.cs", source))
                 .RunAsync();
         }
     }

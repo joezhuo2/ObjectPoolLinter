@@ -22,6 +22,8 @@ namespace UnityEngine
     {
         public string tag { get => null; set { } }
         public bool CompareTag(string tag) => false;
+        public GameObject gameObject => null;
+        public Transform transform => null;
         public T[] GetComponentsInChildren<T>() => null;
         public void GetComponentsInChildren<T>(List<T> results) { }
     }
@@ -58,7 +60,18 @@ namespace UnityEngine
         public Vector3[] vertices { get => null; set { } }
     }
 
-    public class GameObject : Object { }
+    public class GameObject : Object
+    {
+        public string tag { get => null; set { } }
+        public bool CompareTag(string tag) => false;
+        public GameObject gameObject => this;
+        public Transform transform => null;
+    }
+
+    public class Transform : Component
+    {
+        public Transform parent => null;
+    }
     public class Material : Object { }
 
     public class Renderer : Component
@@ -515,6 +528,116 @@ public class LoadingScreen : MonoBehaviour
             await CreateTest(source)
                 .WithEditorConfig("object_pool_linter.excluded_types = LoadingScreen")
                 .RunAsync();
+        }
+
+        // T27: an allocating property read is reported only in a hot path. Startup and teardown
+        // messages, a trigger message that runs once per contact, a helper that is not a Unity message,
+        // and an `Update` overload whose signature Unity does not call all read it without a report.
+        [Theory]
+        [InlineData("void Awake()")]
+        [InlineData("void Start()")]
+        [InlineData("void OnEnable()")]
+        [InlineData("void OnDisable()")]
+        [InlineData("void OnDestroy()")]
+        [InlineData("void OnTriggerEnter(Collider other)")]
+        [InlineData("void Refresh()")]
+        [InlineData("void Update(int frame)")]
+        public async Task ColdPathPropertyRead_DoesNotReport(string signature)
+        {
+            var source = @"
+using UnityEngine;
+
+public class Scanner : MonoBehaviour
+{
+    public Mesh mesh;
+
+    " + signature + @"
+    {
+        var cameras = Camera.allCameras;
+        var touches = Input.touches;
+        var vertices = mesh.vertices;
+        var isPlayer = tag == ""Player"";
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        // T28: `gameObject` and `transform` return an existing object, not a new array or string, and
+        // are not in the list of known allocating getters.
+        [Theory]
+        [InlineData("var go = gameObject;")]
+        [InlineData("var t = transform;")]
+        [InlineData("var t = gameObject.transform;")]
+        [InlineData("var go = transform.gameObject;")]
+        [InlineData("var t = other.transform;")]
+        [InlineData("var go = other.gameObject;")]
+        [InlineData("var p = transform.parent;")]
+        [InlineData("var main = Camera.main;")]
+        public async Task SingleObjectProperty_DoesNotReport(string statement)
+        {
+            var source = @"
+using UnityEngine;
+
+public class Follower : MonoBehaviour
+{
+    public Collider other;
+
+    void Update()
+    {
+        " + statement + @"
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        // T29: `GameObject.tag` is marshalled from native code like `Component.tag`, and reported under
+        // its own type name. Writing it and `CompareTag` are not reported.
+        [Fact]
+        public async Task GameObjectTag_Reports()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Tagged : MonoBehaviour
+{
+    public GameObject target;
+
+    void Update()
+    {
+        var mine = {|#0:gameObject.tag|};
+        var isEnemy = {|#1:target.tag|} == ""Enemy"";
+        var better = target.CompareTag(""Enemy"");
+        target.tag = ""Untagged"";
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("GameObject.tag", "string"),
+                Diagnostic("GameObject.tag", "string", location: 1));
+        }
+
+        [Fact]
+        public async Task GameObjectTag_InColdPath_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Tagged : MonoBehaviour
+{
+    void Start()
+    {
+        var mine = gameObject.tag;
+    }
+}
+";
+
+            await VerifyAsync(source);
         }
     }
 }
