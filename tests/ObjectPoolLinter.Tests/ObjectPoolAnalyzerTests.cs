@@ -11,29 +11,6 @@ namespace ObjectPoolLinter.Tests
 {
     public class ObjectPoolAnalyzerTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object
-    {
-        public static Object Instantiate(Object original) => null;
-        public static Object Instantiate(Object original, UnityEngine.Vector3 position, UnityEngine.Quaternion rotation) => null;
-    }
-
-    public struct Vector3 { }
-    public struct Quaternion { }
-
-    public class Collider : Object { }
-    public class Collider2D : Object { }
-    public class Collision { }
-    public class Collision2D { }
-
-    public class MonoBehaviour : Object
-    {
-    }
-}
-";
-
         private static Task VerifyAnalyzerAsync(string source, params DiagnosticResult[] expected)
         {
             var test = new Test
@@ -42,7 +19,7 @@ namespace UnityEngine
                 ReferenceAssemblies = TestReferenceAssemblies.Default,
             };
 
-            test.TestState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
             test.ExpectedDiagnostics.AddRange(expected);
             return test.RunAsync();
         }
@@ -56,7 +33,7 @@ namespace UnityEngine
                 ReferenceAssemblies = TestReferenceAssemblies.Default,
             };
 
-            test.TestState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
             test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", "root = true\n\n[*]\n" + editorConfigOptions + "\n"));
             test.ExpectedDiagnostics.AddRange(expected);
             return test.RunAsync();
@@ -190,6 +167,37 @@ public class MyBehaviour : MonoBehaviour
             var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(0)
                 .WithArguments("new MyStruct boxed to object", "Update");
+
+            await VerifyAnalyzerAsync(source, expected);
+        }
+
+        // T49: the sample's case. Constructing Vector3 in Update is not reported, only the copy boxed to
+        // object; Update2 is not a Unity message, so even its boxing is not reported.
+        [Fact]
+        public async Task NewVector3InUpdate_OnlyBoxedCopyReports()
+        {
+            var source = @"
+using UnityEngine;
+
+public class MyBehaviour : MonoBehaviour
+{
+    void Update()
+    {
+        var position = new Vector3();
+        object boxed = {|#0:new Vector3()|};
+    }
+
+    void Update2()
+    {
+        var position = new Vector3();
+        object boxed = new Vector3();
+    }
+}
+";
+
+            var expected = new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
+                .WithLocation(0)
+                .WithArguments("new Vector3 boxed to object", "Update");
 
             await VerifyAnalyzerAsync(source, expected);
         }

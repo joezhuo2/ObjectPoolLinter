@@ -9,32 +9,10 @@ namespace ObjectPoolLinter.Tests
     // F8: code Burst compiles cannot allocate managed memory, so no hot-path rule reports inside it.
     public class BurstCompileTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public class MonoBehaviour : Object { }
-}
-
-namespace Unity.Burst
-{
-    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct | System.AttributeTargets.Method)]
-    public class BurstCompileAttribute : System.Attribute { }
-
-    [System.AttributeUsage(System.AttributeTargets.Method)]
-    public class BurstDiscardAttribute : System.Attribute { }
-}
-
-namespace Unity.Jobs
-{
-    public interface IJob { void Execute(); }
-}
-";
-
         private static HotPathAnalyzerTest<TAnalyzer> CreateTest<TAnalyzer>(string source, string editorConfig, params DiagnosticResult[] expected)
             where TAnalyzer : DiagnosticAnalyzer, new()
         {
-            return new HotPathAnalyzerTest<TAnalyzer>(source, UnityStub, expected).WithEditorConfig(editorConfig);
+            return new HotPathAnalyzerTest<TAnalyzer>(source, SharedUnityStub.Source, expected).WithEditorConfig(editorConfig);
         }
 
         private static DiagnosticResult Allocation(string allocation, string method, int location = 0)

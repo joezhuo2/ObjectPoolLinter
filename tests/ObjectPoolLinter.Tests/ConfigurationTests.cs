@@ -10,19 +10,10 @@ namespace ObjectPoolLinter.Tests
     // excluded_types_regex, the per-kind OPL002 severities, and OPL004 for options that do nothing.
     public class ConfigurationTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public struct Vector3 { }
-    public class MonoBehaviour : Object { }
-}
-";
-
         private static HotPathAnalyzerTest<TAnalyzer> CreateTest<TAnalyzer>(string source, string editorConfig, params DiagnosticResult[] expected)
             where TAnalyzer : DiagnosticAnalyzer, new()
         {
-            return new HotPathAnalyzerTest<TAnalyzer>(source, UnityStub, expected).WithEditorConfig(editorConfig);
+            return new HotPathAnalyzerTest<TAnalyzer>(source, SharedUnityStub.Source, expected).WithEditorConfig(editorConfig);
         }
 
         private static DiagnosticResult Allocation(string allocation, string method, int location = 0)

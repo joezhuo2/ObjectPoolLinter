@@ -15,20 +15,6 @@ namespace ObjectPoolLinter.Tests
 {
     public class ObjectPoolCodeFixProviderTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object
-    {
-        public static Object Instantiate(Object original) => null;
-    }
-
-    public class MonoBehaviour : Object
-    {
-    }
-}
-";
-
         private const string AddPoolingCommentKey = "ObjectPoolLinterAddPoolingComment";
         private const string ReplaceWithPoolGetKey = "ObjectPoolLinterReplaceWithPoolGet";
         private const string GeneratePoolKey = "ObjectPoolLinterGeneratePool";
@@ -46,8 +32,8 @@ namespace UnityEngine
                 CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne | CodeFixTestBehaviors.SkipFixAllCheck,
             };
 
-            test.TestState.Sources.Add(UnityStub);
-            test.FixedState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
+            test.FixedState.Sources.Add(SharedUnityStub.Source);
 
             test.TestState.ExpectedDiagnostics.Add(Expected());
             if (diagnosticRemains)
@@ -743,7 +729,7 @@ public class MyBehaviour : MonoBehaviour
                 TestCode = source,
                 ReferenceAssemblies = TestReferenceAssemblies.Default,
             };
-            test.TestState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
 
             await test.RunAsync();
         }
@@ -1295,8 +1281,8 @@ public class MyBehaviour : MonoBehaviour
                 CompilerDiagnostics = CompilerDiagnostics.Errors,
             };
 
-            test.TestState.Sources.Add(UnityStub);
-            test.FixedState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
+            test.FixedState.Sources.Add(SharedUnityStub.Source);
 
             for (var i = 0; i < 3; i++)
                 test.TestState.ExpectedDiagnostics.Add(Expected(i));
@@ -1364,9 +1350,9 @@ public class MyBehaviour : MonoBehaviour
                 CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne,
             };
 
-            test.TestState.Sources.Add(UnityStub);
-            test.FixedState.Sources.Add(UnityStub);
-            test.BatchFixedState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
+            test.FixedState.Sources.Add(SharedUnityStub.Source);
+            test.BatchFixedState.Sources.Add(SharedUnityStub.Source);
 
             for (var i = 0; i < 2; i++)
             {
@@ -1578,7 +1564,7 @@ public class MyBehaviour : MonoBehaviour
                 .WithMetadataReferences(await TestReferenceAssemblies.Default.ResolveAsync(LanguageNames.CSharp, CancellationToken.None));
 
             var document = project.AddDocument("Test0.cs", source);
-            project = document.Project.AddDocument("UnityStub.cs", UnityStub).Project;
+            project = document.Project.AddDocument("UnityStub.cs", SharedUnityStub.Source).Project;
             document = project.GetDocument(document.Id)!;
 
             var compilation = await document.Project.GetCompilationAsync();

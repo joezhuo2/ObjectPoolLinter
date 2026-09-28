@@ -11,15 +11,6 @@ namespace ObjectPoolLinter.Tests
 {
     public class HiddenAllocationCodeFixProviderTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public struct Vector3 { }
-    public class MonoBehaviour : Object { }
-}
-";
-
         private const string CacheLambdaKey = "ObjectPoolLinterCacheLambda";
         private const string CacheMethodGroupKey = "ObjectPoolLinterCacheMethodGroup";
         private const string UseStringBuilderKey = "ObjectPoolLinterUseStringBuilder";
@@ -56,8 +47,8 @@ namespace UnityEngine
                 CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne | CodeFixTestBehaviors.SkipFixAllCheck,
             };
 
-            test.TestState.Sources.Add(UnityStub);
-            test.FixedState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
+            test.FixedState.Sources.Add(SharedUnityStub.Source);
             return test;
         }
 
@@ -172,11 +163,6 @@ public class Spawner : MonoBehaviour
             var source = @"
 using System;
 using UnityEngine;
-
-namespace UnityEngine
-{
-    public class Collider : Object { }
-}
 
 public class Spawner : MonoBehaviour
 {

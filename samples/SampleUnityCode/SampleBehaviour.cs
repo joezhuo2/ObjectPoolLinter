@@ -21,7 +21,12 @@ public class PlayerBehaviour : MonoBehaviour
         // Warning: Instantiate in Update
         UnityEngine.Object.Instantiate(prefab);
 
-        // Warning: struct boxed to object in Update
+        // No warning: Vector3 is a value type, so `new Vector3()` builds it in place without a heap
+        // allocation, even in Update
+        var position = new Vector3();
+        _ = position;
+
+        // Warning: the same struct boxed to object in Update
         object boxed = new Vector3();
         _ = boxed;
     }
@@ -38,11 +43,11 @@ public class PlayerBehaviour : MonoBehaviour
         var list = new System.Collections.Generic.List<int>();
     }
 
-    // Struct allocation - should NOT warn (value type, not boxed)
+    // NOT a hot path - Unity never calls a method named Update2, so nothing in it is reported, even a
+    // reference-type allocation. The value-type case is shown in Update above.
     void Update2()
     {
-        var v = new Vector3();
-        _ = v;
+        var list = new System.Collections.Generic.List<int>();
     }
 }
 

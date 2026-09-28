@@ -143,7 +143,8 @@ dotnet test ObjectPoolLinter.slnx -c Release
 The tests compile their C# sources against the .NET Standard 2.1 reference assemblies, the default API
 compatibility level of Unity 2021.3, the oldest Unity the package supports. Setting
 `OPL_TEST_REFERENCE_ASSEMBLIES=newest` reruns them against the .NET 10 reference assemblies; CI runs
-both. CI also collects line coverage of the analyzer and code fix assemblies and fails below 90%:
+both. Every test file compiles against the same Unity stubs, `tests/ObjectPoolLinter.Tests/SharedUnityStub.cs`;
+a test that needs a Unity member the stub lacks adds it there rather than declaring its own copy. CI also collects line coverage of the analyzer and code fix assemblies and fails below 90%:
 
 ```
 dotnet test ObjectPoolLinter.slnx -c Release --collect:"XPlat Code Coverage" --settings tests/ObjectPoolLinter.Tests/coverage.runsettings --results-directory artifacts/coverage
@@ -274,7 +275,8 @@ initializer by hand.
 
 The TODO-comment fix leaves the diagnostic in place, so you can add the comment first and apply the
 pool rewrite later; the comment stays above the statement. Every fix, OPL002 and OPL003 included,
-writes new lines with the file's own line ending (LF or CRLF).
+writes new lines with the file's own line ending (LF or CRLF). The OPL001 fixes can be applied with
+**Fix All** in a document, project or solution; the OPL002 and OPL003 fixes cannot (see below).
 
 The pool fixes are also **not** offered for array allocations (`new int[4]`, `new[] { 1, 2 }`).
 Those get the third fix instead, and only where it is safe: a local buffer, declared with its length,

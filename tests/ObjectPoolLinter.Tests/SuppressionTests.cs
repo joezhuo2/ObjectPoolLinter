@@ -12,20 +12,6 @@ namespace ObjectPoolLinter.Tests
     // the allocation is known not to run every frame.
     public class SuppressionTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-
-    public class MonoBehaviour : Object { }
-
-    public static class Time
-    {
-        public static int frameCount { get { return 0; } }
-    }
-}
-";
-
         private static DiagnosticResult Allocation(string allocation, string method = "Update", int location = 0) =>
             new DiagnosticResult(ObjectPoolAnalyzer.DiagnosticId, DiagnosticSeverity.Warning)
                 .WithLocation(location)
@@ -42,7 +28,7 @@ namespace UnityEngine
 
         private static SuppressionTest<TAnalyzer> CreateTest<TAnalyzer>(string source, params DiagnosticResult[] expected)
             where TAnalyzer : DiagnosticAnalyzer, new() =>
-            new(source, UnityStub, expected);
+            new(source, SharedUnityStub.Source, expected);
 
         // --- The first-frame guard ---
 
@@ -381,14 +367,6 @@ public class MyBehaviour : MonoBehaviour
             var source = @"
 using UnityEngine;
 
-namespace UnityEngine
-{
-    public static class Resources
-    {
-        public static T Load<T>(string path) where T : Object => null;
-    }
-}
-
 public class MyBehaviour : MonoBehaviour
 {
     private Object _prefab;
@@ -417,14 +395,6 @@ public class MyBehaviour : MonoBehaviour
         {
             var source = @"
 using UnityEngine;
-
-namespace UnityEngine
-{
-    public class GameObject : Object
-    {
-        public static GameObject Find(string name) => null;
-    }
-}
 
 public class MyBehaviour : MonoBehaviour
 {

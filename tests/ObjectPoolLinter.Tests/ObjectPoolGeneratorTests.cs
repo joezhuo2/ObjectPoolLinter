@@ -15,14 +15,6 @@ namespace ObjectPoolLinter.Tests
     // build.
     public class ObjectPoolGeneratorTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public class MonoBehaviour : Object { }
-}
-";
-
         private static readonly MetadataReference[] References = LoadRuntimeReferences();
 
         private static MetadataReference[] LoadRuntimeReferences()
@@ -465,7 +457,7 @@ public class Enemy : MonoBehaviour
 {
     public Enemy() { }
 }
-", LanguageVersion.Latest, UnityStub);
+", LanguageVersion.Latest, SharedUnityStub.Source);
 
             AssertRejected(run, "Instantiate");
         }

@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.7.0] - 2026-09-28 - Lookups & Hardening (Release Summary)
+
+*This release tests the analyzers the way Roslyn and the IDE actually run them: concurrently, with one
+set of analyzer instances shared by several compilations, and over a project with hundreds of types
+under a deep MonoBehaviour hierarchy. It also gives the whole test suite one Unity stub to compile
+against. The analyzers, code fixes, generator and suppressor are unchanged from 1.6.11.*
+
+It also caps the development arc from `v1.6.1` through `v1.6.11`. Over that period ObjectPoolLinter
+gained a ninth rule for component and scene lookups, OPL003 learned the Unity APIs that build a new
+string or object rather than an array, the NuGet package started carrying its own release notes, and
+nine test-and-documentation releases took the suite from 300 to 470 tests, pinned the rules against
+each other and against the code a Unity project really compiles, and wrote down what each rule does
+not report.
+
+### Highlights
+
+- **OPL009, component and scene lookups (`v1.6.1`)**: `GetComponent<T>()`, `TryGetComponent`,
+  `GetComponentInChildren`, `GetComponentInParent`, `GameObject.Find` and the `FindObjectOfType`
+  family are reported inside a hot path when called on this object or one reached through fields, with
+  the advice to look it up once and keep it in a field. A lookup on a parameter, local or method
+  result (`other.GetComponent<T>()` in `OnTriggerStay`) is left alone, and a lookup cached in a field
+  is suppressed as `OPLS004`
+- **OPL003 reaches further (`v1.6.1`)**: array-returning members of `UnityEngine.SceneManagement` and
+  `UnityEngine.AI` are matched, along with the getters and methods that build a new string or object
+  on every call (`Application.dataPath` and the other paths, `Scene.name`, `Animator.GetParameter`,
+  `NavMeshAgent.path`, `JsonUtility.ToJson` / `FromJson`). The OPL003 page stopped recommending
+  `Renderer.sharedMaterials`, which copies its array too
+- **A package that explains itself (`v1.6.2`)**: the `.nupkg` carries the changelog section for its
+  version as `PackageReleaseNotes` and an icon, `build/pack-unity.ps1 -UnityVersion` sets the minimum
+  Unity the UPM package declares, and CI packs the Unity artifacts on every push and fails on a
+  manifest with a leftover placeholder
+- **Tests that see what Unity sees (`v1.6.4`)**: test sources compile against .NET Standard 2.1, the
+  default API level of Unity 2021.3, so interpolation boxes its holes as it does in a Unity project;
+  `OPL_TEST_REFERENCE_ASSEMBLIES=newest` reruns everything against .NET 10, and CI runs both. CI also
+  collects coverage and fails below 90% line coverage
+- **The rules run together (`v1.6.3`, `v1.6.7` to `v1.6.11`)**: `IntegrationTests.cs` runs OPL001,
+  OPL002 and OPL003 over one compilation, so a case one rule skips cannot be reported by another. It
+  covers multi-file partials and base classes, per-file `.editorconfig` sections, delegates and
+  `params`, LINQ chains, lambda captures, compound assignment, hole-less interpolation, initializers
+  and multi-dimensional arrays, `Instantiate` overloads, deep-namespace hot methods, excluded-type
+  lists, generated code, and OPL003's namespace and derived-reference rules
+- **The code fix contract, pinned (`v1.6.5`, `v1.6.6`)**: `Instantiate` gets only the TODO comment,
+  the pool's `Get` is matched by argument count with optional and `params` parameters, every fix
+  writes the file's own line ending, and the comment fix can be followed by the pool rewrite
+- **Concurrency, scale and one shared stub (`v1.7.0`)**: detailed below
+
+### Added
+- **Concurrent execution tests** in the new `ConcurrentExecutionTests.cs`. They run OPL001, OPL002,
+  OPL003, OPL008 and OPL009 through `CompilationWithAnalyzers` rather than the testing library, which
+  analyzes one small project at a time, and compare what is reported per file, method and rule with
+  what each file's options ask for. Every file's hot methods allocate once for each rule, and all of
+  them call the same iterator, so OPL002's per-compilation cache of state-machine kinds is shared
+  between threads. An analyzer exception fails the test instead of turning into an `AD0001`
+  diagnostic.
+  - **Per-file options under concurrent analysis**: 200 files with `additional_hot_methods = Tick` in
+    the odd-numbered ones only. A sequential run and three concurrent runs each report exactly `Update`
+    everywhere and `Tick` in the odd files.
+  - **One set of analyzer instances, two compilations at once**: `Tick` is hot everywhere in one
+    compilation and nowhere in the other, and four analyses (two of each) run in parallel three times
+    over. Each reports only what its own options ask for.
+  - Making `HotPathDetector`'s options cache static and keyed by file path, or giving every file the
+    same entry, fails these tests.
+- **Large compilation test**: 400 MonoBehaviours spread under a 150-deep chain of base classes, each
+  file also holding a plain class whose `Update` is not a Unity message, with `Tick` hot in every third
+  file. Analysis finishes inside a two-minute limit (about three seconds locally) and reports exactly
+  3,204 diagnostics: six per hot method, none in the plain classes.
+- **Allocating and buffer-filling overloads in one `Update`** in `IntegrationTests.cs`:
+  `GetComponentsInChildren<T>()` and `(List<T>)`, `GetComponentsInChildren<T>(true)` and
+  `(true, List<T>)`, `GetComponents<T>()` and `(List<T>)`, `GetComponentsInParent<T>()` and
+  `(false, List<T>)`, `Renderer.sharedMaterials` and `GetSharedMaterials(List<Material>)`,
+  `Physics.RaycastAll` and `RaycastNonAlloc`, `NavMeshPath.corners` and `GetCornersNonAlloc`, and
+  `Scene.GetRootGameObjects()` and `(List<GameObject>)`. Only the array-returning call of each pair
+  reports.
+- **Fix-all provider tests** in `FixAllProviderTests.cs`: `ObjectPoolCodeFixProvider` returns
+  `WellKnownFixAllProviders.BatchFixer`, and the OPL002 and OPL003 providers return `null`. A fourth
+  test lists every `CodeFixProvider` in the assembly, so a new one fails it until its fix-all behavior
+  is decided.
+- **`new Vector3()` in `Update`** in `ObjectPoolAnalyzerTests.cs`: constructing the struct is not
+  reported, the copy boxed to `object` is, and the same two lines in `Update2` report nothing.
+- 9 tests, for 479 in total, passing against both reference-assembly profiles. Line coverage is 94.0%.
+
+### Changed
+- **One Unity stub for every test file.** Sixteen test files each declared their own `UnityStub`
+  (533 lines between them), with different members and some conflicting shapes: `Collider` derived
+  from `Object` in one and from `Component` in another, and `NativeArray<T>` had fields in one and
+  members in the other. They are replaced by `tests/ObjectPoolLinter.Tests/SharedUnityStub.cs`, the
+  union of all of them, with no syntax newer than the C# 9 some tests compile it under. Three
+  tests that declared a `UnityEngine` type the stub now has (`Resources`, `GameObject`, `Collider`)
+  lost their local copy. The few tests that need a different Unity surface on purpose (no
+  `UnityEngine.Object`, a `MonoBehaviour` nested in another class, no Unity at all) still pass their
+  own. All 470 existing tests pass against it.
+- `samples/SampleUnityCode/SampleBehaviour.cs`: `new Vector3()` moves into the real `Update`, where it
+  shows that constructing a struct is not reported, next to the boxed copy that is. `Update2` now
+  holds a `List<int>` allocation and says what it actually demonstrates: Unity never calls a method
+  of that name, so nothing in it is reported. `build/verify-sample.ps1` still sees its 17 warnings.
+- [docs/rules/OPL001.md](docs/rules/OPL001.md#code-fixes) says the fixes support Fix All through
+  Roslyn's batch fixer and why the OPL002 and OPL003 fixes do not, and the
+  [README](README.md#code-fixes) says the same in one line.
+- [docs/rules/OPL003.md](docs/rules/OPL003.md#what-is-not-reported-and-why) lists every buffer-filling
+  overload the tests cover and says that a method calling both overloads of one API gets one
+  diagnostic, on the array-returning call.
+- The README's build section points test authors at the shared stub.
+
 ## [v1.6.11] - 2026-09-28
 
 Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1300,7 +1403,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.11...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.7.0...HEAD
+[v1.7.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.11...v1.7.0
 [v1.6.11]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.10...v1.6.11
 [v1.6.10]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.9...v1.6.10
 [v1.6.9]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.8...v1.6.9

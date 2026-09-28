@@ -11,53 +11,6 @@ namespace ObjectPoolLinter.Tests
 {
     public class UnityApiAllocationCodeFixProviderTests
     {
-        private const string UnityStub = @"
-using System.Collections.Generic;
-
-namespace UnityEngine
-{
-    public class Object
-    {
-        public string name { get => null; set { } }
-    }
-
-    public class GameObject : Object
-    {
-        public string tag { get => null; set { } }
-        public bool CompareTag(string tag) => false;
-    }
-
-    public class Component : Object
-    {
-        public GameObject gameObject => null;
-        public string tag { get => null; set { } }
-        public bool CompareTag(string tag) => false;
-        public T[] GetComponents<T>() => null;
-        public void GetComponents<T>(List<T> results) { }
-        public T[] GetComponentsInChildren<T>() => null;
-        public T[] GetComponentsInChildren<T>(bool includeInactive) => null;
-        public void GetComponentsInChildren<T>(List<T> results) { }
-        public void GetComponentsInChildren<T>(bool includeInactive, List<T> results) { }
-        public T[] GetComponentsInParent<T>() => null;
-        public void GetComponentsInParent<T>(bool includeInactive, List<T> results) { }
-    }
-
-    public class Behaviour : Component { }
-    public class MonoBehaviour : Behaviour { }
-    public class Collider : Component { }
-
-    public struct Vector2 { public float x; }
-    public struct Touch { public Vector2 position; }
-
-    public static class Input
-    {
-        public static Touch[] touches => null;
-        public static int touchCount => 0;
-        public static Touch GetTouch(int index) => default;
-    }
-}
-";
-
         private const string UseCompareTagKey = "ObjectPoolLinterUseCompareTag";
         private const string UseBufferOverloadKey = "ObjectPoolLinterUseBufferOverload";
         private const string UseGetTouchKey = "ObjectPoolLinterUseGetTouch";
@@ -90,8 +43,8 @@ namespace UnityEngine
                 CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne | CodeFixTestBehaviors.SkipFixAllCheck,
             };
 
-            test.TestState.Sources.Add(UnityStub);
-            test.FixedState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
+            test.FixedState.Sources.Add(SharedUnityStub.Source);
             return test;
         }
 

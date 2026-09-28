@@ -18,46 +18,11 @@ namespace ObjectPoolLinter.Tests
     // Instantiate with a position and rotation, several allocations in one statement, and arrays
     // allocated outside a MonoBehaviour. T41-T45: a hot method named with a deep namespace, several
     // excluded types in one entry, generated code, OPL003 in sub-namespaces of UnityEngine, and OPL003
-    // through a derived-type reference. All run against all three rules so that a case one rule skips is
-    // not reported by another.
+    // through a derived-type reference. T46: allocating and buffer-filling overloads of the same Unity
+    // API in one Update. All run against all three rules so that a case one rule skips is not reported
+    // by another.
     public class IntegrationTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object
-    {
-        public string name { get => null; set { } }
-        public static Object Instantiate(Object original) => null;
-        public static Object Instantiate(Object original, Vector3 position, Quaternion rotation) => null;
-        public static T Instantiate<T>(T original, Vector3 position, Quaternion rotation) where T : Object => null;
-    }
-
-    public class Component : Object
-    {
-        public string tag { get => null; set { } }
-        public GameObject gameObject => null;
-        public Transform transform => null;
-    }
-
-    public class Behaviour : Component { }
-    public class MonoBehaviour : Behaviour { }
-    public class GameObject : Object { }
-    public class Transform : Component { }
-    public class Collider : Component { }
-
-    public struct Vector3 { }
-    public struct Quaternion { }
-    public struct Ray { }
-    public struct RaycastHit { }
-
-    public static class Physics
-    {
-        public static RaycastHit[] RaycastAll(Ray ray) => null;
-    }
-}
-";
-
         // Runs OPL001, OPL002 and OPL003 together, the way a build does.
         private sealed class AllRulesTest : AnalyzerTest<DefaultVerifier>
         {
@@ -88,7 +53,7 @@ namespace UnityEngine
 
             public AllRulesTest WithSources(params (string Path, string Source)[] sources)
             {
-                TestState.Sources.Add(("/UnityStub.cs", UnityStub));
+                TestState.Sources.Add(("/UnityStub.cs", SharedUnityStub.Source));
                 foreach (var source in sources)
                 {
                     TestState.Sources.Add(source);
@@ -1691,6 +1656,76 @@ public class Follower<T> : MonoBehaviour where T : Component
                     UnityApi("Component.tag", "string", "Update", 6),
                     UnityApi("Object.name", "string", "Update", 7))
                 .WithSources(("/Tracker.cs", source))
+                .RunAsync();
+        }
+
+        // --- T46: allocating and non-allocating overloads in the same method ---
+
+        // Each API is called twice in one Update: once through the overload that returns a new array and
+        // once through the one that fills a caller-owned list or array. Only the first is reported, for
+        // every pair, whether the call is unqualified, through a field or through a struct; the buffers are
+        // allocated in field initializers, which are not hot.
+        [Fact]
+        public async Task OverloadsInSameUpdate_OnlyTheAllocatingOverloadReports()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.SceneManagement;
+
+public class Scanner : MonoBehaviour
+{
+    readonly List<Collider> _colliders = new List<Collider>();
+    readonly List<Material> _materials = new List<Material>();
+    readonly List<GameObject> _roots = new List<GameObject>();
+    readonly RaycastHit[] _hits = new RaycastHit[8];
+    readonly Vector3[] _corners = new Vector3[16];
+
+    public Renderer body;
+    public NavMeshPath route;
+    Ray ray;
+
+    void Update()
+    {
+        var a = {|#0:GetComponentsInChildren<Collider>()|};
+        GetComponentsInChildren(_colliders);
+
+        var b = {|#1:GetComponentsInChildren<Collider>(true)|};
+        GetComponentsInChildren(true, _colliders);
+
+        var c = {|#2:body.GetComponents<Collider>()|};
+        body.GetComponents(_colliders);
+
+        var d = {|#3:GetComponentsInParent<Collider>()|};
+        GetComponentsInParent(false, _colliders);
+
+        var e = {|#4:body.sharedMaterials|};
+        body.GetSharedMaterials(_materials);
+
+        var f = {|#5:Physics.RaycastAll(ray)|};
+        var hitCount = Physics.RaycastNonAlloc(ray, _hits);
+
+        var g = {|#6:route.corners|};
+        var cornerCount = route.GetCornersNonAlloc(_corners);
+
+        var scene = SceneManager.GetActiveScene();
+        var h = {|#7:scene.GetRootGameObjects()|};
+        scene.GetRootGameObjects(_roots);
+    }
+}
+";
+
+            await new AllRulesTest(
+                    UnityApi("Component.GetComponentsInChildren", "Collider[]", "Update", 0),
+                    UnityApi("Component.GetComponentsInChildren", "Collider[]", "Update", 1),
+                    UnityApi("Component.GetComponents", "Collider[]", "Update", 2),
+                    UnityApi("Component.GetComponentsInParent", "Collider[]", "Update", 3),
+                    UnityApi("Renderer.sharedMaterials", "Material[]", "Update", 4),
+                    UnityApi("Physics.RaycastAll", "RaycastHit[]", "Update", 5),
+                    UnityApi("NavMeshPath.corners", "Vector3[]", "Update", 6),
+                    UnityApi("Scene.GetRootGameObjects", "GameObject[]", "Update", 7))
+                .WithSources(("/Scanner.cs", source))
                 .RunAsync();
         }
     }

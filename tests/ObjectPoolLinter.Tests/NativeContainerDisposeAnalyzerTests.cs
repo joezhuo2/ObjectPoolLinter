@@ -8,73 +8,9 @@ namespace ObjectPoolLinter.Tests
     // F10: OPL007, native containers that are not disposed.
     public class NativeContainerDisposeAnalyzerTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public class MonoBehaviour : Object { }
-}
-
-namespace Unity.Jobs
-{
-    public struct JobHandle
-    {
-        public void Complete() { }
-    }
-
-    public interface IJob { void Execute(); }
-}
-
-namespace Unity.Collections.LowLevel.Unsafe
-{
-    [System.AttributeUsage(System.AttributeTargets.Struct)]
-    public class NativeContainerAttribute : System.Attribute { }
-}
-
-namespace Unity.Collections
-{
-    using Unity.Collections.LowLevel.Unsafe;
-    using Unity.Jobs;
-
-    public enum Allocator { Invalid = 0, None = 1, Temp = 2, TempJob = 3, Persistent = 4 }
-
-    public static class AllocatorManager
-    {
-        public struct AllocatorHandle
-        {
-            public static implicit operator AllocatorHandle(Allocator allocator) => default;
-        }
-    }
-
-    [System.AttributeUsage(System.AttributeTargets.Field)]
-    public class DeallocateOnJobCompletionAttribute : System.Attribute { }
-
-    [NativeContainer]
-    public struct NativeArray<T> : System.IDisposable where T : struct
-    {
-        public NativeArray(int length, Allocator allocator) { Length = length; }
-        public NativeArray(T[] array, Allocator allocator) { Length = array.Length; }
-        public int Length { get; }
-        public bool IsCreated => true;
-        public T this[int index] { get => default; set { } }
-        public void Dispose() { }
-        public JobHandle Dispose(JobHandle dependency) => dependency;
-    }
-
-    [NativeContainer]
-    public struct NativeList<T> : System.IDisposable where T : unmanaged
-    {
-        public NativeList(AllocatorManager.AllocatorHandle allocator) { }
-        public NativeList(int capacity, AllocatorManager.AllocatorHandle allocator) { }
-        public void Add(in T value) { }
-        public void Dispose() { }
-    }
-}
-";
-
         private static Task VerifyAsync(string source, params DiagnosticResult[] expected)
         {
-            return new HotPathAnalyzerTest<NativeContainerDisposeAnalyzer>(source, UnityStub, expected).RunAsync();
+            return new HotPathAnalyzerTest<NativeContainerDisposeAnalyzer>(source, SharedUnityStub.Source, expected).RunAsync();
         }
 
         private static DiagnosticResult Never(string type, string allocator, string method = "Update", int location = 0) =>

@@ -13,18 +13,9 @@ namespace ObjectPoolLinter.Tests
 {
     public class HiddenAllocationAnalyzerTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public struct Vector3 { }
-    public class MonoBehaviour : Object { }
-}
-";
-
         private static HotPathAnalyzerTest<HiddenAllocationAnalyzer> CreateTest(string source, params DiagnosticResult[] expected)
         {
-            return new HotPathAnalyzerTest<HiddenAllocationAnalyzer>(source, UnityStub, expected);
+            return new HotPathAnalyzerTest<HiddenAllocationAnalyzer>(source, SharedUnityStub.Source, expected);
         }
 
         private static Task VerifyAsync(string source, params DiagnosticResult[] expected)
@@ -597,7 +588,7 @@ public class Hud : MonoBehaviour
                 new CSharpParseOptions(languageVersion));
             var compilation = CSharpCompilation.Create(
                 "Boxing",
-                new[] { tree, CSharpSyntaxTree.ParseText(UnityStub, new CSharpParseOptions(languageVersion)) },
+                new[] { tree, CSharpSyntaxTree.ParseText(SharedUnityStub.Source, new CSharpParseOptions(languageVersion)) },
                 references,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
             Assert.Empty(compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));

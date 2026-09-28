@@ -13,62 +13,9 @@ namespace ObjectPoolLinter.Tests
         private const string ComponentAdvice = "Get it once in Awake or Start and keep it in a field";
         private const string SceneAdvice = "Find it once in Awake or Start and keep it in a field";
 
-        private const string UnityStub = @"
-using System.Collections.Generic;
-
-namespace UnityEngine
-{
-    public class Object
-    {
-        public static T FindObjectOfType<T>() where T : Object => null;
-        public static T FindFirstObjectByType<T>() where T : Object => null;
-        public static T FindAnyObjectByType<T>() where T : Object => null;
-        public static T[] FindObjectsOfType<T>() where T : Object => null;
-    }
-
-    public class Component : Object
-    {
-        public GameObject gameObject => null;
-        public Transform transform => null;
-        public T GetComponent<T>() => default;
-        public Component GetComponent(System.Type type) => null;
-        public bool TryGetComponent<T>(out T component) { component = default; return false; }
-        public T GetComponentInChildren<T>() => default;
-        public T GetComponentInParent<T>() => default;
-        public T[] GetComponents<T>() => null;
-        public void GetComponents<T>(List<T> results) { }
-    }
-
-    public class GameObject : Object
-    {
-        public Transform transform => null;
-        public T GetComponent<T>() => default;
-        public static GameObject Find(string name) => null;
-        public static GameObject FindWithTag(string tag) => null;
-        public static GameObject FindGameObjectWithTag(string tag) => null;
-        public static GameObject[] FindGameObjectsWithTag(string tag) => null;
-    }
-
-    public class Transform : Component
-    {
-        public Transform parent => null;
-    }
-
-    public class Behaviour : Component { }
-    public class MonoBehaviour : Behaviour { }
-    public class Collider : Component { }
-    public class Rigidbody : Component { }
-
-    public struct RaycastHit
-    {
-        public Collider collider => null;
-    }
-}
-";
-
         private static HotPathAnalyzerTest<ComponentLookupAnalyzer> CreateTest(string source, params DiagnosticResult[] expected)
         {
-            return new HotPathAnalyzerTest<ComponentLookupAnalyzer>(source, UnityStub, expected);
+            return new HotPathAnalyzerTest<ComponentLookupAnalyzer>(source, SharedUnityStub.Source, expected);
         }
 
         private static Task VerifyAsync(string source, params DiagnosticResult[] expected)

@@ -11,64 +11,9 @@ namespace ObjectPoolLinter.Tests
         private const string ResourcesAdvice = "Load it once in Awake or Start and keep it in a field";
         private const string AddressablesAdvice = "Load it once in Awake or Start and keep the handle or its result in a field";
 
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public class GameObject : Object { }
-    public class Texture2D : Object { }
-    public class MonoBehaviour : Object { }
-    public class ResourceRequest { }
-
-    public static class Resources
-    {
-        public static Object Load(string path) => null;
-        public static T Load<T>(string path) where T : Object => null;
-        public static ResourceRequest LoadAsync(string path) => null;
-        public static ResourceRequest LoadAsync<T>(string path) where T : Object => null;
-        public static Object[] LoadAll(string path) => null;
-        public static void UnloadAsset(Object asset) { }
-    }
-}
-
-namespace UnityEngine.ResourceManagement.AsyncOperations
-{
-    public struct AsyncOperationHandle<T> { }
-    public struct AsyncOperationHandle { }
-}
-
-namespace UnityEngine.AddressableAssets
-{
-    using System.Collections.Generic;
-    using UnityEngine.ResourceManagement.AsyncOperations;
-
-    public static class Addressables
-    {
-        public static AsyncOperationHandle<T> LoadAssetAsync<T>(object key) => default;
-        public static AsyncOperationHandle<IList<T>> LoadAssetsAsync<T>(object key, System.Action<T> callback) => default;
-        public static AsyncOperationHandle LoadSceneAsync(object key) => default;
-        public static AsyncOperationHandle<GameObject> InstantiateAsync(object key) => default;
-        public static void Release<T>(AsyncOperationHandle<T> handle) { }
-    }
-
-    public class AssetReference
-    {
-        public virtual AsyncOperationHandle<T> LoadAssetAsync<T>() => default;
-        public virtual void ReleaseAsset() { }
-    }
-
-    public class AssetReferenceT<TObject> : AssetReference where TObject : Object
-    {
-        public AsyncOperationHandle<TObject> LoadAssetAsync() => default;
-    }
-
-    public class AssetReferenceGameObject : AssetReferenceT<GameObject> { }
-}
-";
-
         private static Task VerifyAsync(string source, params DiagnosticResult[] expected)
         {
-            return new HotPathAnalyzerTest<AssetLoadAnalyzer>(source, UnityStub, expected).RunAsync();
+            return new HotPathAnalyzerTest<AssetLoadAnalyzer>(source, SharedUnityStub.Source, expected).RunAsync();
         }
 
         private static DiagnosticResult Diagnostic(string api, string advice, string method = "Update", int location = 0) =>
@@ -240,7 +185,7 @@ public class LoadingScreen : MonoBehaviour
 }
 ";
 
-            await new HotPathAnalyzerTest<AssetLoadAnalyzer>(source, UnityStub, Diagnostic("Resources.Load", ResourcesAdvice, "Tick"))
+            await new HotPathAnalyzerTest<AssetLoadAnalyzer>(source, SharedUnityStub.Source, Diagnostic("Resources.Load", ResourcesAdvice, "Tick"))
                 .WithEditorConfig("object_pool_linter.additional_hot_methods = Tick\nobject_pool_linter.excluded_types = LoadingScreen")
                 .RunAsync();
         }

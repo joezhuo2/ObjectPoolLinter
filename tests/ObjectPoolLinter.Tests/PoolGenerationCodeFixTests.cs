@@ -13,15 +13,6 @@ namespace ObjectPoolLinter.Tests
     // fixes added in 1.5.4.
     public class PoolGenerationCodeFixTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-
-    public class MonoBehaviour : Object { }
-}
-";
-
         private const string GeneratePoolKey = "ObjectPoolLinterGeneratePool";
         private const string RentFromArrayPoolKey = "ObjectPoolLinterRentFromArrayPool";
 
@@ -37,8 +28,8 @@ namespace UnityEngine
                 CodeFixTestBehaviors = CodeFixTestBehaviors.FixOne | CodeFixTestBehaviors.SkipFixAllCheck,
             };
 
-            test.TestState.Sources.Add(UnityStub);
-            test.FixedState.Sources.Add(UnityStub);
+            test.TestState.Sources.Add(SharedUnityStub.Source);
+            test.FixedState.Sources.Add(SharedUnityStub.Source);
 
             test.TestState.ExpectedDiagnostics.Add(Expected());
             if (diagnosticRemains) test.FixedState.ExpectedDiagnostics.Add(Expected());

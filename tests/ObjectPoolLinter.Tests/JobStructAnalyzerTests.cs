@@ -8,57 +8,9 @@ namespace ObjectPoolLinter.Tests
     // F9: OPL006, managed fields in Unity job structs.
     public class JobStructAnalyzerTests
     {
-        private const string UnityStub = @"
-namespace UnityEngine
-{
-    public class Object { }
-    public class MonoBehaviour : Object { }
-    public struct Vector3 { public float x, y, z; }
-}
-
-namespace Unity.Jobs
-{
-    public interface IJob { void Execute(); }
-    public interface IJobParallelFor { void Execute(int index); }
-}
-
-namespace Unity.Jobs.LowLevel.Unsafe
-{
-    [System.AttributeUsage(System.AttributeTargets.Interface)]
-    public class JobProducerTypeAttribute : System.Attribute
-    {
-        public JobProducerTypeAttribute(System.Type producerType) { }
-    }
-}
-
-namespace Unity.Collections.LowLevel.Unsafe
-{
-    [System.AttributeUsage(System.AttributeTargets.Struct)]
-    public class NativeContainerAttribute : System.Attribute { }
-
-    [System.AttributeUsage(System.AttributeTargets.Field)]
-    public class NativeSetClassTypeToNullOnScheduleAttribute : System.Attribute { }
-
-    public sealed class DisposeSentinel { }
-}
-
-namespace Unity.Collections
-{
-    using Unity.Collections.LowLevel.Unsafe;
-
-    [NativeContainer]
-    public struct NativeArray<T> where T : struct
-    {
-        [NativeSetClassTypeToNullOnSchedule]
-        DisposeSentinel m_DisposeSentinel;
-        int m_Length;
-    }
-}
-";
-
         private static Task VerifyAsync(string source, params DiagnosticResult[] expected)
         {
-            return new HotPathAnalyzerTest<JobStructAnalyzer>(source, UnityStub, expected).RunAsync();
+            return new HotPathAnalyzerTest<JobStructAnalyzer>(source, SharedUnityStub.Source, expected).RunAsync();
         }
 
         private static DiagnosticResult Diagnostic(string field, string job, string problem, int location = 0)
@@ -178,7 +130,7 @@ public unsafe struct SumJob : IJob
 }
 ";
 
-            var test = new HotPathAnalyzerTest<JobStructAnalyzer>(source, UnityStub);
+            var test = new HotPathAnalyzerTest<JobStructAnalyzer>(source, SharedUnityStub.Source);
             test.SolutionTransforms.Add((solution, projectId) =>
             {
                 var project = solution.GetProject(projectId)!;
