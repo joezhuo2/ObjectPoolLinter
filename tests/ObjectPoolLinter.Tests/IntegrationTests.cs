@@ -12,8 +12,9 @@ namespace ObjectPoolLinter.Tests
 {
     // T1-T3: the analyzers running together over one compilation, over several files, and with
     // .editorconfig sections that apply to some files only. T20-T24: delegate, params and LINQ edge
-    // cases, and T25-T26: compound assignments and interpolated strings that allocate nothing, run
-    // against all three rules so that a case one rule skips is not reported by another.
+    // cases, T25-T26: compound assignments and interpolated strings that allocate nothing, and T30-T35:
+    // lambda captures, several chains in one method, SelectMany and GroupBy, and boxing through a
+    // static method's argument, run against all three rules so that a case one rule skips is not reported by another.
     public class IntegrationTests
     {
         private const string UnityStub = @"
@@ -791,6 +792,252 @@ public class Hud : MonoBehaviour
 
             await new AllRulesTest(Hidden("string interpolation", "Update", 0)) { LanguageVersion = languageVersion }
                 .WithSources(("/Hud.cs", source))
+                .RunAsync();
+        }
+
+        // --- T30: a lambda capturing several locals ---
+
+        // Captured names are listed in order of first use, each once, separated by ", ", with `this`
+        // for an instance member.
+        [Fact]
+        public async Task LambdaCapturingSeveralLocals_ListsEachNameOnceInOrderOfFirstUse()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    int wave;
+
+    void Update()
+    {
+        var count = 3;
+        var hp = 10;
+        Func<int> sum = {|#0:() => count + hp|};
+        Func<int> reversed = {|#1:() => hp + count|};
+        Func<int> repeated = {|#2:() => count + count * hp + count|};
+        Func<int> withThis = {|#3:() => count + wave + hp|};
+        Func<int, int> withOwnParameter = {|#4:h => h + count + hp|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Hidden("lambda capturing count, hp", "Update", 0),
+                    Hidden("lambda capturing hp, count", "Update", 1),
+                    Hidden("lambda capturing count, hp", "Update", 2),
+                    Hidden("lambda capturing count, this, hp", "Update", 3),
+                    Hidden("lambda capturing count, hp", "Update", 4))
+                .WithSources(("/Squad.cs", source))
+                .RunAsync();
+        }
+
+        // --- T31: a lambda capturing a parameter of the hot method ---
+
+        // Unity passes the layer index to OnAnimatorIK(int), so its parameter is a real hot-path
+        // capture; so is the parameter of a method added through additional_hot_methods.
+        [Fact]
+        public async Task LambdaCapturingHotMethodParameter_ReportsTheParameterName()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class Rig : MonoBehaviour
+{
+    void OnAnimatorIK(int layerIndex)
+    {
+        Func<int> next = {|#0:() => layerIndex + 1|};
+    }
+
+    void Tick(int x)
+    {
+        var offset = 2;
+        Func<int> f = {|#1:() => x + 1|};
+        Func<int> g = {|#2:() => x + offset|};
+        Func<int, int> own = y => y + 1;
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Hidden("lambda capturing layerIndex", "OnAnimatorIK", 0),
+                    Hidden("lambda capturing x", "Tick", 1),
+                    Hidden("lambda capturing x, offset", "Tick", 2))
+                .WithSources(("/Rig.cs", source))
+                .WithEditorConfig("[*.cs]\nobject_pool_linter.additional_hot_methods = Tick")
+                .RunAsync();
+        }
+
+        // `Update(int)` is not the message Unity calls every frame, so a capture there is not reported.
+        [Fact]
+        public async Task LambdaCapturingParameterOfUpdateOverload_DoesNotReport()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class Rig : MonoBehaviour
+{
+    void Update(int x)
+    {
+        Func<int> f = () => x + 1;
+    }
+}
+";
+
+            await new AllRulesTest()
+                .WithSources(("/Rig.cs", source))
+                .RunAsync();
+        }
+
+        // --- T32: several string concatenations in one method ---
+
+        // Each separate chain is its own site to fix and is reported on its own, including two
+        // chains passed as arguments to the same call.
+        [Fact]
+        public async Task SeveralConcatenationsInOneMethod_EachChainReported()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    string x = ""a"", y = ""b"", z = ""c"", w = ""d"";
+
+    void Update()
+    {
+        var a = {|#0:x + y|};
+        var b = {|#1:z + w|};
+        var c = {|#2:x + y + z + w|};
+        Show({|#3:a + b|}, {|#4:c + x|});
+    }
+
+    static void Show(string first, string second) { }
+}
+";
+
+            await new AllRulesTest(
+                    Hidden("string concatenation", "Update", 0),
+                    Hidden("string concatenation", "Update", 1),
+                    Hidden("string concatenation", "Update", 2),
+                    Hidden("string concatenation", "Update", 3),
+                    Hidden("string concatenation", "Update", 4))
+                .WithSources(("/Hud.cs", source))
+                .RunAsync();
+        }
+
+        // --- T33: several LINQ chains in one method ---
+
+        // A sequence passed as a later argument, such as the one given to Concat, is a chain of its own.
+        [Fact]
+        public async Task SeveralLinqChainsInOneMethod_EachChainReported()
+        {
+            var source = @"
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+
+    void Update()
+    {
+        var alive = {|#0:hp.Where(h => h > 0).ToList()|};
+        var doubled = {|#1:hp.Select(h => h * 2).ToList()|};
+        var both = {|#2:hp.Where(h => h > 0).Concat({|#3:hp.Select(h => h * 2)|}).ToList()|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Hidden("LINQ Where().ToList()", "Update", 0),
+                    Hidden("LINQ Select().ToList()", "Update", 1),
+                    Hidden("LINQ Where().Concat().ToList()", "Update", 2),
+                    Hidden("LINQ Select()", "Update", 3))
+                .WithSources(("/Squad.cs", source))
+                .RunAsync();
+        }
+
+        // --- T34: SelectMany and GroupBy chains ---
+
+        [Fact]
+        public async Task SelectManyAndGroupByChains_DescribeEachLink()
+        {
+            var source = @"
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<List<int>> squads = new List<List<int>>();
+    readonly List<int> hp = new List<int>();
+
+    void Update()
+    {
+        var keys = {|#0:squads.SelectMany(s => s).GroupBy(h => h / 10).Select(g => g.Key).ToList()|};
+        var flat = {|#1:hp.GroupBy(h => h % 2).SelectMany(g => g).Distinct().ToArray()|};
+        var scaled = {|#2:squads.SelectMany(s => s, (s, h) => h * 2).ToList()|};
+        var groups = {|#3:hp.GroupBy(h => h % 2, h => h * 2)|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Hidden("LINQ SelectMany().GroupBy().Select().ToList()", "Update", 0),
+                    Hidden("LINQ GroupBy().SelectMany().Distinct().ToArray()", "Update", 1),
+                    Hidden("LINQ SelectMany().ToList()", "Update", 2),
+                    Hidden("LINQ GroupBy()", "Update", 3))
+                .WithSources(("/Squad.cs", source))
+                .RunAsync();
+        }
+
+        // --- T35: boxing through a static method's object parameter ---
+
+        // A struct created in the argument is boxed on the spot and reported by OPL001; an existing
+        // value is reported by OPL002. A generic parameter takes the struct without boxing.
+        [Fact]
+        public async Task BoxingViaStaticMethodArgument_Reports()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public struct Cell { public int X; }
+
+public static class Log
+{
+    public static void Write(object value) { }
+    public static void Compare(IComparable value) { }
+    public static void Keep<T>(T value) { }
+}
+
+public class Grid : MonoBehaviour
+{
+    Cell cell;
+    int count;
+
+    void Update()
+    {
+        Log.Write({|#0:new Cell()|});
+        Log.Write({|#1:cell|});
+        Log.Write({|#2:count|});
+        Log.Compare({|#3:count|});
+        Log.Keep(cell);
+        Log.Keep(new Cell());
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Allocation("new Cell boxed to object", "Update", 0),
+                    Hidden("boxing Cell to object", "Update", 1),
+                    Hidden("boxing int to object", "Update", 2),
+                    Hidden("boxing int to IComparable", "Update", 3))
+                .WithSources(("/Grid.cs", source))
                 .RunAsync();
         }
     }

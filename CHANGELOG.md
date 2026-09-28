@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.9] - 2026-09-27
+
+Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.6.8.
+
+### Added
+- **OPL002 edge cases** in `IntegrationTests.cs`, run against OPL001, OPL002 and OPL003 together:
+  - **Lambdas capturing several locals**: `() => count + hp` reports `lambda capturing count, hp` and
+    `() => hp + count` reports `lambda capturing hp, count`. A name used more than once is listed once,
+    a field adds `this` at its first use (`lambda capturing count, this, hp`), and the lambda's own
+    parameter is left out.
+  - **Lambdas capturing a parameter of the hot method**: `() => layerIndex + 1` in
+    `OnAnimatorIK(int layerIndex)` reports `lambda capturing layerIndex`, and a `Tick(int x)` added
+    through `additional_hot_methods` reports `lambda capturing x` and `lambda capturing x, offset`. The
+    same capture in an `Update(int x)` overload is not reported, since Unity never calls it.
+  - **Several string concatenations in one method**: `x + y`, `z + w`, `x + y + z + w`, and two chains
+    passed as arguments to one call each report their own `string concatenation`.
+  - **Several LINQ chains in one method**: `hp.Where(...).ToList()` and `hp.Select(...).ToList()` are
+    reported separately, and `hp.Where(...).Concat(hp.Select(...)).ToList()` reports
+    `LINQ Where().Concat().ToList()` plus `LINQ Select()` for the argument.
+  - **`SelectMany` and `GroupBy` chains**: `LINQ SelectMany().GroupBy().Select().ToList()`,
+    `LINQ GroupBy().SelectMany().Distinct().ToArray()`, the result-selector overload of `SelectMany`
+    as `LINQ SelectMany().ToList()`, and the element-selector overload of `GroupBy` as `LINQ GroupBy()`.
+  - **Boxing through a static method's argument**: `Log.Write(new Cell())` against
+    `static void Write(object)` reports OPL001 `new Cell boxed to object`; `Log.Write(cell)`,
+    `Log.Write(count)` and `Log.Compare(count)` against an `IComparable` parameter report OPL002
+    `boxing Cell to object`, `boxing int to object` and `boxing int to IComparable`. A generic
+    `Keep<T>(T)` parameter boxes nothing.
+
+### Changed
+- [docs/rules/OPL002.md](docs/rules/OPL002.md#cause) explains how a capturing lambda's message lists
+  its captured names, including a hot method's parameter, and gives a multi-name example and a static
+  method argument example in the table.
+  [What is not reported](docs/rules/OPL002.md#what-is-not-reported-and-why) now says that separate
+  concatenation and LINQ chains in one method are reported separately, how `SelectMany` and `GroupBy`
+  links are named, and that a struct created in an `object` argument is OPL001's.
+
 ## [v1.6.8] - 2026-09-27
 
 Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1183,7 +1220,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.8...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.9...HEAD
+[v1.6.9]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.8...v1.6.9
 [v1.6.8]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.7...v1.6.8
 [v1.6.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.6...v1.6.7
 [v1.6.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.5...v1.6.6
