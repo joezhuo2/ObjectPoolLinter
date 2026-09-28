@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.6.10] - 2026-09-28
+
+Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.6.9.
+
+### Added
+- **OPL001 edge cases** in `IntegrationTests.cs`, run against OPL001, OPL002 and OPL003 together. The
+  test stub's `UnityEngine.Object` now declares `Instantiate(Object)`,
+  `Instantiate(Object, Vector3, Quaternion)` and `Instantiate<T>(T, Vector3, Quaternion)`, alongside
+  `GameObject`, `Vector3` and `Quaternion`.
+  - **Object and collection initializers**: `new List<int> { 1, 2, 3 }`,
+    `new Dictionary<string, int> { ["a"] = 1 }`, `new Enemy { Hp = 10 }` and a target-typed
+    `new() { 4, 5 }` in `Update` each report OPL001 under the created type's name. In
+    `new List<Enemy> { new Enemy() }` the list and the element are reported separately.
+  - **Multi-dimensional arrays**: `new int[,] { { 1 }, { 2 } }`, `new float[2, 3]`,
+    `new byte[2, 2, 2]`, the implicit `new[,] { { 1, 2 }, { 3, 4 } }` and the jagged `new int[2][]`
+    report `new int[,]`, `new float[,]`, `new byte[,,]`, `new int[,]` and `new int[][]`.
+  - **`Instantiate` with a position and rotation**: `Object.Instantiate(prefab, position, rotation)`,
+    the unqualified call inside the MonoBehaviour, the generic overload resolved for a `GameObject`,
+    and a call given `new Vector3()` and `new Quaternion()` each report `Instantiate` once; the struct
+    arguments are not reported. The same calls in `Start` are not reported.
+  - **Several allocations in one statement**: `Use(new A(), new B())`,
+    `Take(new A(), new int[3], new List<int> { 1 })`, the tuple `(new A(), new B())` and
+    `new Wrapper(new A())` report every `new`, nine diagnostics in all.
+  - **Arrays allocated outside a MonoBehaviour**: `Update`, `FixedUpdate` and `LateUpdate` declared on
+    a struct, a static class, an interface's default implementation that a MonoBehaviour inherits, and
+    a struct nested in a MonoBehaviour allocate arrays and a list without a diagnostic. The
+    MonoBehaviour's own `Update` in the same file reports its `new int[4]`.
+
+### Changed
+- [docs/rules/OPL001.md](docs/rules/OPL001.md#cause) says that every `Instantiate` overload is
+  reported, that an initializer does not remove the allocation, how multi-dimensional and jagged
+  arrays are named, and that each `new` in one statement is reported on its own. The list of methods
+  that are not hot paths now includes message-named methods on a struct, a static class and an
+  interface's default implementation.
+
 ## [v1.6.9] - 2026-09-27
 
 Tests and documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1220,7 +1256,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.9...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.10...HEAD
+[v1.6.10]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.9...v1.6.10
 [v1.6.9]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.8...v1.6.9
 [v1.6.8]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.7...v1.6.8
 [v1.6.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.6...v1.6.7

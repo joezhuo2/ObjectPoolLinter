@@ -14,17 +14,29 @@ namespace ObjectPoolLinter.Tests
     // .editorconfig sections that apply to some files only. T20-T24: delegate, params and LINQ edge
     // cases, T25-T26: compound assignments and interpolated strings that allocate nothing, and T30-T35:
     // lambda captures, several chains in one method, SelectMany and GroupBy, and boxing through a
-    // static method's argument, run against all three rules so that a case one rule skips is not reported by another.
+    // static method's argument. T36-T40: OPL001 edge cases, namely initializers, multi-dimensional arrays,
+    // Instantiate with a position and rotation, several allocations in one statement, and arrays
+    // allocated outside a MonoBehaviour. All run against all three rules so that a case one rule skips is
+    // not reported by another.
     public class IntegrationTests
     {
         private const string UnityStub = @"
 namespace UnityEngine
 {
-    public class Object { }
+    public class Object
+    {
+        public static Object Instantiate(Object original) => null;
+        public static Object Instantiate(Object original, Vector3 position, Quaternion rotation) => null;
+        public static T Instantiate<T>(T original, Vector3 position, Quaternion rotation) where T : Object => null;
+    }
+
     public class Component : Object { }
     public class Behaviour : Component { }
     public class MonoBehaviour : Behaviour { }
+    public class GameObject : Object { }
 
+    public struct Vector3 { }
+    public struct Quaternion { }
     public struct Ray { }
     public struct RaycastHit { }
 
@@ -1038,6 +1050,215 @@ public class Grid : MonoBehaviour
                     Hidden("boxing int to object", "Update", 2),
                     Hidden("boxing int to IComparable", "Update", 3))
                 .WithSources(("/Grid.cs", source))
+                .RunAsync();
+        }
+
+        // --- T36: object and collection initializers ---
+
+        // The initializer runs after the constructor, so the allocation still happens. The whole
+        // expression, initializer included, is reported under the created type's name, and an object
+        // created inside a collection initializer is reported on its own.
+        [Fact]
+        public async Task CreationWithInitializer_Reports()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Enemy { public int Hp; }
+
+public class Spawner : MonoBehaviour
+{
+    void Update()
+    {
+        var ids = {|#0:new List<int> { 1, 2, 3 }|};
+        var byName = {|#1:new Dictionary<string, int> { [""a""] = 1 }|};
+        var enemy = {|#2:new Enemy { Hp = 10 }|};
+        List<int> targetTyped = {|#3:new() { 4, 5 }|};
+        var squad = {|#4:new List<Enemy> { {|#5:new Enemy()|} }|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Allocation("new List<int>", "Update", 0),
+                    Allocation("new Dictionary<string, int>", "Update", 1),
+                    Allocation("new Enemy", "Update", 2),
+                    Allocation("new List<int>", "Update", 3),
+                    Allocation("new List<Enemy>", "Update", 4),
+                    Allocation("new Enemy", "Update", 5))
+                .WithSources(("/Spawner.cs", source))
+                .RunAsync();
+        }
+
+        // --- T37: multi-dimensional arrays ---
+
+        // A rectangular array is one object on the heap whatever its rank; a jagged array's outer
+        // array is reported, and its rows are allocated later by separate `new` expressions.
+        [Fact]
+        public async Task MultiDimensionalArrayCreation_Reports()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Grid : MonoBehaviour
+{
+    void Update()
+    {
+        var grid = {|#0:new int[,] { { 1 }, { 2 } }|};
+        var sized = {|#1:new float[2, 3]|};
+        var cube = {|#2:new byte[2, 2, 2]|};
+        var implicitGrid = {|#3:new[,] { { 1, 2 }, { 3, 4 } }|};
+        var jagged = {|#4:new int[2][]|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Allocation("new int[,]", "Update", 0),
+                    Allocation("new float[,]", "Update", 1),
+                    Allocation("new byte[,,]", "Update", 2),
+                    Allocation("new int[,]", "Update", 3),
+                    Allocation("new int[][]", "Update", 4))
+                .WithSources(("/Grid.cs", source))
+                .RunAsync();
+        }
+
+        // --- T38: Instantiate with a position and rotation ---
+
+        // The three-argument overload clones the object like the one-argument one, qualified or not,
+        // and the generic overload is resolved for a GameObject. The Vector3 and Quaternion passed in
+        // are structs that are not boxed, so only the call is reported. The same calls in Start are not.
+        [Fact]
+        public async Task InstantiateWithPositionAndRotation_Reports()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Spawner : MonoBehaviour
+{
+    Object prefab;
+    GameObject enemy;
+    Vector3 position;
+    Quaternion rotation;
+
+    void Start()
+    {
+        Object.Instantiate(prefab, position, rotation);
+        Instantiate(enemy, position, rotation);
+    }
+
+    void Update()
+    {
+        {|#0:Object.Instantiate(prefab, position, rotation)|};
+        {|#1:Instantiate(prefab, position, rotation)|};
+        GameObject clone = {|#2:Instantiate(enemy, position, rotation)|};
+        {|#3:Object.Instantiate(prefab, new Vector3(), new Quaternion())|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Allocation("Instantiate", "Update", 0),
+                    Allocation("Instantiate", "Update", 1),
+                    Allocation("Instantiate", "Update", 2),
+                    Allocation("Instantiate", "Update", 3))
+                .WithSources(("/Spawner.cs", source))
+                .RunAsync();
+        }
+
+        // --- T39: several allocations in one statement ---
+
+        // Each `new` is its own allocation and its own diagnostic, whether the allocations are sibling
+        // arguments, tuple elements, or one nested in another's constructor arguments.
+        [Fact]
+        public async Task SeveralAllocationsInOneStatement_EachReported()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class A { }
+public class B { }
+
+public class Wrapper
+{
+    public Wrapper(A inner) { }
+}
+
+public class Spawner : MonoBehaviour
+{
+    static void Use(A a, B b) { }
+    static void Take(A a, int[] values, List<int> list) { }
+
+    void Update()
+    {
+        Use({|#0:new A()|}, {|#1:new B()|});
+        Take({|#2:new A()|}, {|#3:new int[3]|}, {|#4:new List<int> { 1 }|});
+        var pair = ({|#5:new A()|}, {|#6:new B()|});
+        var nested = {|#7:new Wrapper({|#8:new A()|})|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Allocation("new A", "Update", 0),
+                    Allocation("new B", "Update", 1),
+                    Allocation("new A", "Update", 2),
+                    Allocation("new int[]", "Update", 3),
+                    Allocation("new List<int>", "Update", 4),
+                    Allocation("new A", "Update", 5),
+                    Allocation("new B", "Update", 6),
+                    Allocation("new Wrapper", "Update", 7),
+                    Allocation("new A", "Update", 8))
+                .WithSources(("/Spawner.cs", source))
+                .RunAsync();
+        }
+
+        // --- T40: arrays allocated outside a MonoBehaviour ---
+
+        // A Unity message has to be declared on a class deriving from MonoBehaviour. A struct, a static
+        // class, an interface's default implementation (even one a MonoBehaviour inherits, since Unity
+        // looks the message up on the class) and a struct nested in a MonoBehaviour are not. The
+        // MonoBehaviour's own Update is the control that shows the rule is running.
+        [Fact]
+        public async Task ArrayAllocationOutsideMonoBehaviour_OnlyTheMonoBehaviourReports()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public struct Mover
+{
+    void Update() { var buffer = new int[4]; }
+    public void FixedUpdate() { var buffer = new[] { 1, 2 }; }
+}
+
+public static class Ticker
+{
+    static void Update() { var buffer = new int[4]; }
+    public static void LateUpdate() { var grid = new int[2, 2]; }
+}
+
+public interface ITicker
+{
+    void Update() { var buffer = new int[4]; }
+    void LateUpdate() { var list = new List<int>(); }
+}
+
+public class Hud : MonoBehaviour, ITicker
+{
+    struct Cell
+    {
+        void Update() { var buffer = new int[4]; }
+    }
+
+    void Update() { var buffer = {|#0:new int[4]|}; }
+}
+";
+
+            await new AllRulesTest(Allocation("new int[]", "Update", 0))
+                .WithSources(("/Hud.cs", source))
                 .RunAsync();
         }
     }
