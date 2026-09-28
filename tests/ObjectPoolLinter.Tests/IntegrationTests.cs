@@ -16,7 +16,9 @@ namespace ObjectPoolLinter.Tests
     // lambda captures, several chains in one method, SelectMany and GroupBy, and boxing through a
     // static method's argument. T36-T40: OPL001 edge cases, namely initializers, multi-dimensional arrays,
     // Instantiate with a position and rotation, several allocations in one statement, and arrays
-    // allocated outside a MonoBehaviour. All run against all three rules so that a case one rule skips is
+    // allocated outside a MonoBehaviour. T41-T45: a hot method named with a deep namespace, several
+    // excluded types in one entry, generated code, OPL003 in sub-namespaces of UnityEngine, and OPL003
+    // through a derived-type reference. All run against all three rules so that a case one rule skips is
     // not reported by another.
     public class IntegrationTests
     {
@@ -25,15 +27,24 @@ namespace UnityEngine
 {
     public class Object
     {
+        public string name { get => null; set { } }
         public static Object Instantiate(Object original) => null;
         public static Object Instantiate(Object original, Vector3 position, Quaternion rotation) => null;
         public static T Instantiate<T>(T original, Vector3 position, Quaternion rotation) where T : Object => null;
     }
 
-    public class Component : Object { }
+    public class Component : Object
+    {
+        public string tag { get => null; set { } }
+        public GameObject gameObject => null;
+        public Transform transform => null;
+    }
+
     public class Behaviour : Component { }
     public class MonoBehaviour : Behaviour { }
     public class GameObject : Object { }
+    public class Transform : Component { }
+    public class Collider : Component { }
 
     public struct Vector3 { }
     public struct Quaternion { }
@@ -1259,6 +1270,427 @@ public class Hud : MonoBehaviour, ITicker
 
             await new AllRulesTest(Allocation("new int[]", "Update", 0))
                 .WithSources(("/Hud.cs", source))
+                .RunAsync();
+        }
+
+        // --- T41: a hot method named with a deep namespace ---
+
+        // The entry splits at its last dot: `Think` is the method and `Game.AI.Enemy.Brain` the type,
+        // matched against the type's namespace-qualified name. Nested types are joined with dots too, so
+        // the entry matches `Brain` nested in `Game.AI.Enemy` as well as `Brain` in namespace
+        // `Game.AI.Enemy`. A parameter list or a leading `global::` does not change where the name splits.
+        [Theory]
+        [InlineData("Game.AI.Enemy.Brain.Think", "namespace Game.AI.Enemy { public class Brain { public void Think() { var a = {|#0:new List<int>()|}; } } }")]
+        [InlineData("Game.AI.Enemy.Brain.Think", "namespace Game.AI { public class Enemy { public class Brain { public void Think() { var a = {|#0:new List<int>()|}; } } } }")]
+        [InlineData("Game.AI.Enemy.Brain.Think()", "namespace Game.AI.Enemy { public class Brain { public void Think() { var a = {|#0:new List<int>()|}; } } }")]
+        [InlineData("global::Game.AI.Enemy.Brain.Think", "namespace Game.AI.Enemy { public class Brain { public void Think() { var a = {|#0:new List<int>()|}; } } }")]
+        public async Task DeepNamespaceHotMethod_Reports(string entry, string declaration)
+        {
+            var source = "using System.Collections.Generic;\n" + declaration + "\n";
+
+            await new AllRulesTest(Allocation("new List<int>", "Think", 0))
+                .WithSources(("/Brain.cs", source))
+                .WithEditorConfig("[*.cs]\nobject_pool_linter.additional_hot_methods = " + entry)
+                .RunAsync();
+        }
+
+        // Only the exact qualified type matches: a `Brain.Think` in another namespace, one namespace
+        // deeper, or in the global namespace is not hot, and neither is another method on the right type.
+        [Fact]
+        public async Task DeepNamespaceHotMethod_OtherTypesWithTheSameNameDoNotReport()
+        {
+            var source = @"
+using System.Collections.Generic;
+
+namespace Game.AI.Enemy
+{
+    public class Brain
+    {
+        public void Think() { var a = {|#0:new List<int>()|}; }
+        public void Plan() { var b = new List<int>(); }
+    }
+}
+
+namespace Other.AI.Enemy
+{
+    public class Brain
+    {
+        public void Think() { var a = new List<int>(); }
+    }
+}
+
+namespace Game.AI.Enemy.Boss
+{
+    public class Brain
+    {
+        public void Think() { var a = new List<int>(); }
+    }
+}
+
+public class Brain
+{
+    public void Think() { var a = new List<int>(); }
+}
+";
+
+            await new AllRulesTest(Allocation("new List<int>", "Think", 0))
+                .WithSources(("/Brain.cs", source))
+                .WithEditorConfig("[*.cs]\nobject_pool_linter.additional_hot_methods = Game.AI.Enemy.Brain.Think")
+                .RunAsync();
+        }
+
+        // --- T42: several excluded types in one entry ---
+
+        // Every name in the comma-separated list is excluded, whatever the spacing and with a trailing
+        // comma, and a qualified name can sit next to a simple one. The exclusion covers all three rules.
+        // Radar is not listed and is the control.
+        [Theory]
+        [InlineData("LoadingScreen, Hud")]
+        [InlineData("LoadingScreen,Hud")]
+        [InlineData("  LoadingScreen ,  Hud ,")]
+        [InlineData("Hud, Game.UI.LoadingScreen")]
+        public async Task SeveralExcludedTypesInOneEntry_EachExcluded(string value)
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Game.UI
+{
+    public class LoadingScreen : MonoBehaviour
+    {
+        int percent;
+
+        void Update()
+        {
+            var list = new List<int>();
+            var label = ""Loading "" + percent;
+            var title = name;
+        }
+    }
+}
+
+public class Hud : MonoBehaviour
+{
+    int score;
+
+    void LateUpdate()
+    {
+        var list = new List<int>();
+        var label = ""Score "" + score;
+        var title = name;
+    }
+}
+
+public class Radar : MonoBehaviour
+{
+    int range;
+
+    void Update()
+    {
+        var list = {|#0:new List<int>()|};
+        var label = {|#1:""Range "" + range|};
+        var title = {|#2:name|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    Allocation("new List<int>", "Update", 0),
+                    Hidden("string concatenation", "Update", 1),
+                    UnityApi("Object.name", "string", "Update", 2))
+                .WithSources(("/Screens.cs", source))
+                .WithEditorConfig("[*.cs]\nobject_pool_linter.excluded_types = " + value)
+                .RunAsync();
+        }
+
+        // --- T43: generated code ---
+
+        private const string GeneratedHud = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public partial class GeneratedHud : MonoBehaviour
+{
+    int score;
+
+    void Update()
+    {
+        var list = new List<int>();
+        var label = ""Score "" + score;
+        var title = name;
+    }
+}
+";
+
+        private const string HandWrittenHud = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    void Update()
+    {
+        var list = {|#0:new List<int>()|};
+    }
+}
+";
+
+        // Every rule opts out of generated code, so none of them reports inside a file Roslyn treats as
+        // generated: by file name (`.designer.cs`, `.generated.cs`, `.g.cs`, `.g.i.cs`, in any case),
+        // or by an `<auto-generated>` or `<autogenerated>` comment at the top of the file. The
+        // hand-written Hud in another file still reports.
+        [Theory]
+        [InlineData("/GeneratedHud.Designer.cs", "")]
+        [InlineData("/GeneratedHud.designer.cs", "")]
+        [InlineData("/GeneratedHud.generated.cs", "")]
+        [InlineData("/GeneratedHud.g.cs", "")]
+        [InlineData("/GeneratedHud.g.i.cs", "")]
+        [InlineData("/GeneratedHud.cs", "// <auto-generated/>\n")]
+        [InlineData("/GeneratedHud.cs", "// <auto-generated>\n//     This code was generated by a tool.\n// </auto-generated>\n")]
+        [InlineData("/GeneratedHud.cs", "// <autogenerated />\n")]
+        public async Task GeneratedCode_NoRuleReports(string path, string header)
+        {
+            await new AllRulesTest(Allocation("new List<int>", "Update", 0))
+                .WithSources((path, header + GeneratedHud), ("/Hud.cs", HandWrittenHud))
+                .RunAsync();
+        }
+
+        // `generated_code = true` in .editorconfig marks a file as generated whatever its name.
+        [Fact]
+        public async Task GeneratedCodeFromEditorConfig_NoRuleReports()
+        {
+            await new AllRulesTest(Allocation("new List<int>", "Update", 0))
+                .WithSources(("/GeneratedHud.cs", GeneratedHud), ("/Hud.cs", HandWrittenHud))
+                .WithEditorConfig("[GeneratedHud.cs]\ngenerated_code = true")
+                .RunAsync();
+        }
+
+        // `[GeneratedCode]` on a class or on a single method takes it out of analysis. Roslyn ignores the
+        // attribute on a class declared in more than one part, so when Split has a hand-written half in
+        // another file, both halves are analyzed; a generated half needs a generated file name, a header,
+        // or the attribute on each method.
+        [Fact]
+        public async Task GeneratedCodeAttribute_OnClassOrMethod_NotOnAClassInSeveralParts()
+        {
+            var source = @"
+using System.CodeDom.Compiler;
+using System.Collections.Generic;
+using UnityEngine;
+
+[GeneratedCode(""tool"", ""1.0"")]
+public class Generated : MonoBehaviour
+{
+    int score;
+
+    void Update()
+    {
+        var list = new List<int>();
+        var label = ""Score "" + score;
+        var title = name;
+    }
+}
+
+public class Mixed : MonoBehaviour
+{
+    [GeneratedCode(""tool"", ""1.0"")]
+    void Update() { var list = new List<int>(); }
+
+    void LateUpdate() { var list = {|#0:new List<int>()|}; }
+}
+
+[GeneratedCode(""tool"", ""1.0"")]
+public partial class Split : MonoBehaviour
+{
+    void Update() { var list = {|#2:new List<int>()|}; }
+}
+";
+
+            var handWritten = @"
+using System.Collections.Generic;
+
+public partial class Split
+{
+    void LateUpdate() { var list = {|#1:new List<int>()|}; }
+}
+";
+
+            await new AllRulesTest(
+                    Allocation("new List<int>", "LateUpdate", 0),
+                    Allocation("new List<int>", "LateUpdate", 1),
+                    Allocation("new List<int>", "Update", 2))
+                .WithSources(("/Generated.cs", source), ("/Split.cs", handWritten))
+                .RunAsync();
+        }
+
+        // A comment that mentions generated code without the tag, or a tag below the first line of code,
+        // does not make the file generated.
+        [Theory]
+        [InlineData("// This file was generated once and is now maintained by hand.\n")]
+        [InlineData("using System;\n// <auto-generated/>\n")]
+        public async Task NotGeneratedCode_Reports(string header)
+        {
+            var source = header + @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    void Update()
+    {
+        var list = {|#0:new List<int>()|};
+    }
+}
+";
+
+            await new AllRulesTest(Allocation("new List<int>", "Update", 0))
+                .WithSources(("/Hud.cs", source))
+                .RunAsync();
+        }
+
+        // --- T44: OPL003 in sub-namespaces of UnityEngine ---
+
+        // OPL003 matches members declared in `UnityEngine` itself and in exactly two of its
+        // sub-namespaces, `UnityEngine.SceneManagement` and `UnityEngine.AI`. Any other sub-namespace
+        // (`UnityEngine.Rendering`), one level below those two (`UnityEngine.AI.Baking`), an `AI`
+        // namespace under another sub-namespace (`UnityEngine.Rendering.AI`) and a `UnityEngine` that is
+        // not at the root (`Game.UnityEngine`) are not matched, even for array-returning members.
+        [Fact]
+        public async Task SubNamespaceMembers_OnlySceneManagementAndAIReport()
+        {
+            var source = @"
+using UnityEngine;
+
+namespace UnityEngine.AI
+{
+    public static class NavMesh
+    {
+        public static int[] GetAreaIds() => null;
+    }
+}
+
+namespace UnityEngine.SceneManagement
+{
+    public static class SceneUtility
+    {
+        public static string[] scenePaths => null;
+    }
+}
+
+namespace UnityEngine.Rendering
+{
+    public static class Probes
+    {
+        public static int[] GetIds() => null;
+        public static string[] names => null;
+    }
+}
+
+namespace UnityEngine.AI.Baking
+{
+    public static class Baker
+    {
+        public static int[] GetIds() => null;
+    }
+}
+
+namespace UnityEngine.Rendering.AI
+{
+    public static class Denoiser
+    {
+        public static int[] GetIds() => null;
+    }
+}
+
+namespace Game.UnityEngine
+{
+    public static class Physics
+    {
+        public static int[] RaycastAll() => null;
+    }
+}
+
+public class Scanner : MonoBehaviour
+{
+    void Update()
+    {
+        var areas = {|#0:UnityEngine.AI.NavMesh.GetAreaIds()|};
+        var paths = {|#1:UnityEngine.SceneManagement.SceneUtility.scenePaths|};
+        var ids = UnityEngine.Rendering.Probes.GetIds();
+        var names = UnityEngine.Rendering.Probes.names;
+        var baked = UnityEngine.AI.Baking.Baker.GetIds();
+        var denoised = UnityEngine.Rendering.AI.Denoiser.GetIds();
+        var hits = Game.UnityEngine.Physics.RaycastAll();
+    }
+}
+";
+
+            await new AllRulesTest(
+                    UnityApi("NavMesh.GetAreaIds", "int[]", "Update", 0),
+                    UnityApi("SceneUtility.scenePaths", "string[]", "Update", 1))
+                .WithSources(("/Scanner.cs", source))
+                .RunAsync();
+        }
+
+        // --- T45: OPL003 through a derived-type reference ---
+
+        // `name` is declared once, on UnityEngine.Object, so reading it through a Component, a Transform,
+        // a Collider, a GameObject, `this`, `base` or a type parameter constrained to Component resolves
+        // to `Object.name` and is reported under that name. `tag` read through a Transform resolves to
+        // `Component.tag`. Writes are not reported, and a user type that hides `name` with its own
+        // property is not an engine member.
+        [Fact]
+        public async Task InheritedEngineProperty_ReportsUnderTheDeclaringType()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Unit : MonoBehaviour
+{
+    public new string name => ""unit"";
+}
+
+public class Tracker : MonoBehaviour
+{
+    public Component target;
+    public Collider hitbox;
+    public Unit unit;
+
+    void Update()
+    {
+        var a = {|#0:target.name|};
+        var b = {|#1:transform.name|};
+        var c = {|#2:hitbox.name|};
+        var d = {|#3:gameObject.name|};
+        var e = {|#4:this.name|};
+        var f = {|#5:base.name|};
+        var g = {|#6:transform.tag|};
+        var h = unit.name;
+        target.name = ""renamed"";
+    }
+}
+
+public class Follower<T> : MonoBehaviour where T : Component
+{
+    public T item;
+
+    void Update()
+    {
+        var label = {|#7:item.name|};
+    }
+}
+";
+
+            await new AllRulesTest(
+                    UnityApi("Object.name", "string", "Update", 0),
+                    UnityApi("Object.name", "string", "Update", 1),
+                    UnityApi("Object.name", "string", "Update", 2),
+                    UnityApi("Object.name", "string", "Update", 3),
+                    UnityApi("Object.name", "string", "Update", 4),
+                    UnityApi("Object.name", "string", "Update", 5),
+                    UnityApi("Component.tag", "string", "Update", 6),
+                    UnityApi("Object.name", "string", "Update", 7))
+                .WithSources(("/Tracker.cs", source))
                 .RunAsync();
         }
     }
