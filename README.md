@@ -178,6 +178,14 @@ files. Roslyn is there twice on purpose: the analyzer builds against `Microsoft.
 the version Unity 2021.3 loads analyzers into, and the tests use the newer version the Roslyn testing
 library needs.
 
+Dependabot (`.github/dependabot.yml`) opens update PRs weekly for the GitHub Actions the workflows use
+and for the NuGet packages in `Directory.Packages.props`, grouping the Actions into one PR and the
+test-only packages into another. It leaves Roslyn and `Microsoft.CodeAnalysis.Analyzers` alone: raising
+the analyzer's Roslyn would stop it loading in older Unity versions, so those move by hand, together
+with the minimum Unity version. Every pull request also runs `actions/dependency-review-action`
+(`.github/workflows/dependency-review.yml`), which fails the PR if it adds a package or action with a
+known vulnerability.
+
 This SDK requirement applies only to building this repository. Projects that consume the analyzer
 need only the hosts listed under [Requirements](#requirements).
 

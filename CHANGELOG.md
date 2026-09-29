@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.8.1] - 2026-09-29
+
+CI and repository configuration only: the analyzers, code fixes, generator and suppressor are
+unchanged from 1.8.0, and the package ships the same assemblies.
+
+### Added
+- **Automated dependency updates.** A new `.github/dependabot.yml` has Dependabot check every Monday
+  for newer GitHub Actions used by the workflows and newer NuGet packages in `Directory.Packages.props`.
+  Actions updates arrive as one grouped PR, as do the test-only packages (xunit, the Roslyn testing
+  library, coverlet, the test SDK). Roslyn itself (`Microsoft.CodeAnalysis.Common`, `.CSharp`,
+  `.CSharp.Workspaces`) and `Microsoft.CodeAnalysis.Analyzers` are excluded: the shipped analyzer has to
+  stay on the Roslyn that Unity 2021.3 loads, and the same package IDs carry the test project's newer
+  version, so those are raised by hand together with the minimum Unity version.
+- **Dependency review on pull requests.** A new `dependency-review` workflow runs
+  `actions/dependency-review-action` on every PR and fails it if the PR adds or upgrades to a NuGet
+  package or GitHub Action with a known vulnerability of any severity. It complements the NuGet audit
+  and `build/check-vulnerable.ps1` checks from 1.8.0, which cover every dependency on every build.
+
+### Changed
+- The README's [Building from source](README.md#building-from-source) section describes the Dependabot
+  configuration, why Roslyn is excluded from it, and the dependency review check.
+
 ## [v1.8.0] - 2026-09-28
 
 Build and CI only: the analyzers, code fixes, generator and suppressor are unchanged from 1.7.0, and
@@ -1443,7 +1465,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.1...HEAD
+[v1.8.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.0...v1.8.1
 [v1.8.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.7.0...v1.8.0
 [v1.7.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.11...v1.7.0
 [v1.6.11]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.10...v1.6.11

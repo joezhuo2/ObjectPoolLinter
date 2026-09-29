@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  # Every action the workflows in .github/workflows use.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
+
+  # NuGet versions live in Directory.Packages.props (central package management), which Dependabot
+  # updates in place.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      test-dependencies:
+        patterns:
+          - coverlet.collector
+          - Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit
+          - Microsoft.CodeAnalysis.CSharp.CodeFix.Testing.XUnit
+          - Microsoft.NET.Test.Sdk
+          - xunit
+          - xunit.runner.visualstudio
+    ignore:
+      # Roslyn is pinned by hand. The shipped analyzer must stay on the Roslyn that the oldest supported
+      # Unity loads analyzers into (3.8.0 for Unity 2021.3), and the same package IDs carry the test
+      # project's newer version, so an automatic bump would either break Unity or move both at once.
+      # Raise these together with the minimum Unity version; see the comment in Directory.Packages.props.
+      - dependency-name: Microsoft.CodeAnalysis.Common
+      - dependency-name: Microsoft.CodeAnalysis.CSharp
+      - dependency-name: Microsoft.CodeAnalysis.CSharp.Workspaces
+      # Newer Microsoft.CodeAnalysis.Analyzers releases add rules that assume a newer Roslyn than the
+      # shipped 3.8.0.
+      - dependency-name: Microsoft.CodeAnalysis.Analyzers
+    commit-message:
+      prefix: deps
