@@ -51,6 +51,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Version $version (prerelease: $prerelease, publish: $publish)"
 
+      # The tag overrides <Version> with -p:Version, but local builds and pack-unity.ps1 without
+      # -Version read the csproj value. Fail when the two disagree so the csproj never goes stale.
+      - name: Check csproj version matches tag
+        run: |
+          csproj=src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj
+          declared=$(grep -oP '(?<=<Version>)[^<]+' "$csproj" | head -n 1)
+          if [ "$declared" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error file=$csproj::<Version> is '$declared' but the tag is '${GITHUB_REF_NAME}'. Bump the csproj before tagging."
+            exit 1
+          fi
+          echo "csproj <Version> $declared matches the tag."
+
       # The release notes are the CHANGELOG section whose heading names this tag. A tag with no
       # section fails the run, so every release has notes.
       - name: Extract release notes
@@ -122,6 +134,26 @@ jobs:
             --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
+
+      # A successful push only means nuget.org accepted the upload; validation and indexing follow.
+      # Poll the flat container (what restore reads) until the version is listed, and fail after
+      # about 30 minutes so a stuck or rejected package does not pass silently.
+      - name: Verify package on nuget.org
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          lower=$(echo "$version" | tr '[:upper:]' '[:lower:]')
+          url="https://api.nuget.org/v3-flatcontainer/objectpoollinter/index.json"
+          for attempt in $(seq 1 60); do
+            if curl -fsSL "$url" | grep -q "\"$lower\""; then
+              echo "ObjectPoolLinter $version is available on nuget.org."
+              exit 0
+            fi
+            echo "Attempt $attempt: $version not listed yet, retrying in 30s."
+            sleep 30
+          done
+          echo "::error::ObjectPoolLinter $version was pushed but is not available on nuget.org after 30 minutes."
+          exit 1
 
       - name: Create GitHub release
         if: steps.version.outputs.publish == 'true'

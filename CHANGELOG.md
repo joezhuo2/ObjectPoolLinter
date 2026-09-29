@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.8.2] - 2026-09-29
+
+Release workflow only: the analyzers, code fixes, generator and suppressor are unchanged from 1.8.1,
+and the package ships the same assemblies.
+
+### Added
+- **Version drift check.** The release workflow now fails before building if `<Version>` in
+  `ObjectPoolLinter.Package.csproj` differs from the pushed tag. CI packs with `-p:Version=<tag>`, but
+  local builds and `build/pack-unity.ps1` without `-Version` read the csproj, so a stale value used to
+  go unnoticed. Bump the csproj before tagging.
+- **Post-publish verification.** After `dotnet nuget push`, the release workflow polls the nuget.org
+  flat container (the endpoint `dotnet restore` reads) until the new version is listed, and fails the
+  run if it is not available within about 30 minutes. The GitHub release is created only after the
+  package is confirmed on nuget.org.
+
+### Changed
+- The README's [Releases](README.md#releases) section describes both checks.
+
 ## [v1.8.1] - 2026-09-29
 
 CI and repository configuration only: the analyzers, code fixes, generator and suppressor are
@@ -1465,7 +1483,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.2...HEAD
+[v1.8.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.1...v1.8.2
 [v1.8.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.0...v1.8.1
 [v1.8.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.7.0...v1.8.0
 [v1.7.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.11...v1.7.0

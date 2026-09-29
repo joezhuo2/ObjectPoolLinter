@@ -212,6 +212,11 @@ NuGet package and both Unity artifacts. From 1.0.0 on it pushes the package to n
 the GitHub release with the artifacts attached. `0.x` tags are dry runs that only upload the files
 as a workflow artifact.
 
+Two checks guard a release. Before building, the run fails if `<Version>` in
+`src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj` differs from the tag, so bump it before
+tagging. After the push, the run polls nuget.org until the new version is listed and fails if it is
+not available within about 30 minutes; the GitHub release is only created once it is.
+
 The same `CHANGELOG.md` section is embedded in the `.nupkg` as its release notes, so NuGet clients
 show it too. `dotnet pack` picks the section whose heading matches the version being packed; a version
 without one gets a link to the changelog instead.
