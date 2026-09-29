@@ -160,6 +160,24 @@ check that the sample reports exactly the warnings it should, as CI does:
 pwsh build/verify-sample.ps1
 ```
 
+CI builds, tests, verifies the sample and packs on Ubuntu, Windows and macOS. Two checks run once, on
+Linux, and can be run locally the same way:
+
+```
+dotnet format ObjectPoolLinter.slnx --verify-no-changes --exclude samples/
+pwsh build/check-vulnerable.ps1
+```
+
+The first enforces the root `.editorconfig` (drop `--verify-no-changes` to apply it); `samples/` is left
+out because the sample exists to trigger the analyzers and `dotnet format` would apply their fixes. The
+second fails on any package, direct or transitive, with a known vulnerability. NuGet audit checks the
+same thing on every restore; locally it warns, and in CI (`CI=true`) it fails the restore.
+
+Package versions live in `Directory.Packages.props` (central package management), not in the project
+files. Roslyn is there twice on purpose: the analyzer builds against `Microsoft.CodeAnalysis` 3.8.0,
+the version Unity 2021.3 loads analyzers into, and the tests use the newer version the Roslyn testing
+library needs.
+
 This SDK requirement applies only to building this repository. Projects that consume the analyzer
 need only the hosts listed under [Requirements](#requirements).
 

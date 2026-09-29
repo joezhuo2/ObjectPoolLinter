@@ -18,8 +18,38 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  build:
+  # Checks that do not depend on the operating system run once, on Linux, next to the build matrix.
+  lint:
     runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # GitHub Actions sets CI=true, so Directory.Build.props turns NuGet audit warnings (NU1901 to
+      # NU1904) into errors and a vulnerable package, direct or transitive, fails this step.
+      - name: Restore
+        run: dotnet restore ObjectPoolLinter.slnx
+
+      - name: Check for vulnerable packages
+        shell: pwsh
+        run: ./build/check-vulnerable.ps1
+
+      # Enforces the root .editorconfig. samples/ is excluded because the sample exists to trigger the
+      # analyzers, and dotnet format would apply their code fixes to it.
+      - name: Check formatting
+        run: dotnet format ObjectPoolLinter.slnx --verify-no-changes --no-restore --exclude samples/
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +100,10 @@ jobs:
         shell: pwsh
         run: ./build/pack-unity.ps1 -SkipBuild
 
+      # Every platform packs, so a platform-specific packing failure shows up, but the packages from
+      # Linux are the ones kept: the release workflow builds on Linux too.
       - name: Upload packages
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: nuget
@@ -80,6 +113,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Unity packages
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: unity
@@ -92,6 +126,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ runner.os }}
           path: artifacts/test-results
           if-no-files-found: ignore

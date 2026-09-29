@@ -28,4 +28,21 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+  <!--
+    NuGet audit: restore checks every package, direct and transitive, against the GitHub Advisory
+    Database and warns (NU1901 to NU1904, low to critical) on a known vulnerability. In CI those
+    warnings are errors, so a vulnerable dependency fails the restore step; locally they stay warnings,
+    so a newly published advisory does not stop anyone from building. build/check-vulnerable.ps1 runs
+    the same check through `dotnet list package` and prints the advisories.
+  -->
+  <PropertyGroup>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CI)' == 'true'">
+    <WarningsAsErrors>$(WarningsAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsAsErrors>
+  </PropertyGroup>
+
 </Project>

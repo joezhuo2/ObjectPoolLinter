@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.8.0] - 2026-09-28
+
+Build and CI only: the analyzers, code fixes, generator and suppressor are unchanged from 1.7.0, and
+the package ships the same assemblies.
+
+### Added
+- **Vulnerability scanning.** `Directory.Build.props` turns on NuGet audit for every project, over
+  direct and transitive packages, at every severity. Restore warns locally and fails in CI (`CI=true`
+  makes NU1901 to NU1904 errors), so a vulnerable package cannot reach a green build. A new
+  `build/check-vulnerable.ps1` runs `dotnet list package --vulnerable --include-transitive` as a second
+  CI check, which otherwise always exits 0, and fails with a table of each vulnerable package, the
+  project that pulls it in, its severity and advisory link, also written to the job summary. No
+  package in the solution has a known vulnerability today.
+- **Formatting check.** A root `.editorconfig` records the code style the repository already follows:
+  four-space indentation, Allman braces, `System` usings first, a final newline and no trailing
+  whitespace, with one-line guard clauses (`if (x) return null;`) allowed. CI runs
+  `dotnet format --verify-no-changes` against it. Language preferences (`var`, block-scoped
+  namespaces, braces) are suggestions only, so the IDE shows them but neither the check nor the
+  sample's `EnforceCodeStyleInBuild` fails on them. `end_of_line` and `charset` are left unset, so a
+  CRLF checkout on Windows and an LF one on Linux both pass. `samples/` is excluded: the sample exists
+  to trigger the analyzers, and `dotnet format` would apply their code fixes to it.
+- **Central package management.** A new `Directory.Packages.props` holds every package version, and
+  the project files no longer set any. Roslyn is listed twice on purpose, with a comment saying why:
+  the shipped analyzer, code fixes and generator stay on `Microsoft.CodeAnalysis` 3.8.0, the version
+  Unity 2021.3 loads analyzers into, and only the test project gets 4.8.0, which the Roslyn testing
+  library needs. Restore resolves exactly the versions it did before.
+
+### Changed
+- **CI builds on Ubuntu, Windows and macOS.** The `build` job in `build.yml` runs as a matrix
+  (`fail-fast: false`), and every platform restores, builds with `-warnaserror`, runs the tests against
+  both reference-assembly profiles, checks coverage, verifies the sample and packs NuGet and Unity
+  artifacts. Only the Linux packages are uploaded, since the release workflow builds on Linux; test
+  results are uploaded per platform as `test-results-<os>`.
+- **A new `lint` job** runs the vulnerability and formatting checks once, on Linux.
+- `dotnet format` reordered the usings of `ObjectPoolCodeFixProvider.cs` and added the final newline
+  `ObjectPoolAnalyzerTests.cs` lacked. No code changed.
+- The README's [Building from source](README.md#building-from-source) section lists the CI platforms,
+  shows how to run the formatting and vulnerability checks locally, and explains where package versions
+  live and why Roslyn has two.
+
 ## [v1.7.0] - 2026-09-28 - Lookups & Hardening (Release Summary)
 
 *This release tests the analyzers the way Roslyn and the IDE actually run them: concurrently, with one
@@ -1403,7 +1443,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.0...HEAD
+[v1.8.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.7.0...v1.8.0
 [v1.7.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.11...v1.7.0
 [v1.6.11]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.10...v1.6.11
 [v1.6.10]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.6.9...v1.6.10

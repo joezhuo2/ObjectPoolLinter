@@ -1,0 +1,49 @@
+<Project>
+
+  <!--
+    Central package management: every PackageReference in the repo takes its version from here, and a
+    csproj that sets Version on a PackageReference fails to restore (NU1008).
+
+    Roslyn is referenced at two versions on purpose, and both live here so they cannot drift apart
+    unnoticed:
+
+    - The shipped analyzer, code fixes and generator compile against Microsoft.CodeAnalysis 3.8.0, the
+      Roslyn that Unity 2021.3 (the oldest Unity the package supports) loads analyzers into. An analyzer
+      built against a newer Roslyn fails to load there. Raise it only together with the minimum Unity
+      version in build/pack-unity.ps1 and docs/unity-package-manager.md.
+    - The tests run on the newer Roslyn that Microsoft.CodeAnalysis.Testing requires. Only the test
+      project gets these versions (the condition below); everything else sees 3.8.0.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+    <ShippedRoslynVersion>3.8.0</ShippedRoslynVersion>
+    <TestRoslynVersion>4.8.0</TestRoslynVersion>
+    <TestingLibraryVersion>1.1.2</TestingLibraryVersion>
+  </PropertyGroup>
+
+  <!-- Shipped assemblies (src/) -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'ObjectPoolLinter.Tests'">
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(ShippedRoslynVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(ShippedRoslynVersion)" />
+  </ItemGroup>
+
+  <!-- Tests (tests/ObjectPoolLinter.Tests) -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'ObjectPoolLinter.Tests'">
+    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="$(TestRoslynVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(TestRoslynVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(TestRoslynVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
+
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="$(TestingLibraryVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing.XUnit" Version="$(TestingLibraryVersion)" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+</Project>
