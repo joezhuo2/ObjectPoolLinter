@@ -217,6 +217,29 @@ Two checks guard a release. Before building, the run fails if `<Version>` in
 tagging. After the push, the run polls nuget.org until the new version is listed and fails if it is
 not available within about 30 minutes; the GitHub release is only created once it is.
 
+The symbol package is checked before anything is published. `build/verify-symbols.cs` confirms the
+`.snupkg` holds only portable PDBs, one for every DLL in the `.nupkg`, each matching its DLL's debug
+id and carrying Source Link. The build workflow runs the same check on every push; run it locally
+after `dotnet pack` with:
+
+```bash
+dotnet run --file build/verify-symbols.cs -- artifacts/nuget
+```
+
+Every released file is signed with Sigstore through
+[GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations):
+a build provenance attestation records which repository, workflow and commit produced it. Each release
+also carries an SPDX SBOM, `ObjectPoolLinter-<version>.spdx.json`, listing the released files and
+the NuGet packages the shipped projects restore, with its own signed attestation. To check a
+download came from this repository's release workflow:
+
+```bash
+gh attestation verify ObjectPoolLinter.1.8.3.nupkg --repo joezhuo2/ObjectPoolLinter
+```
+
+Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
+can verify but does not fail, since the released files are signed either way.
+
 The same `CHANGELOG.md` section is embedded in the `.nupkg` as its release notes, so NuGet clients
 show it too. `dotnet pack` picks the section whose heading matches the version being packed; a version
 without one gets a link to the changelog instead.

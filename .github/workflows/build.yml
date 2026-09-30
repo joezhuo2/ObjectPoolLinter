@@ -94,6 +94,11 @@ jobs:
       - name: Pack
         run: dotnet pack src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj -c Release --no-build -o artifacts/nuget
 
+      # nuget.org validates a .snupkg only after it is pushed. This checks the same things first:
+      # portable PDBs only, one per shipped DLL, each matching its DLL's debug id, with Source Link.
+      - name: Verify symbol package
+        run: dotnet run --file build/verify-symbols.cs -- artifacts/nuget
+
       # Also the check that unity/package.json.in has every placeholder replaced: pack-unity.ps1 reads
       # package.json back out of the tarball and fails on a leftover __NAME__ or a wrong version.
       - name: Pack Unity

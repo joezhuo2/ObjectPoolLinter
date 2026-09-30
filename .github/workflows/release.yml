@@ -6,8 +6,11 @@ on:
 
 permissions:
   contents: write
-  # Lets the job request the GitHub OIDC token that NuGet/login exchanges for a nuget.org API key.
+  # Lets the job request the GitHub OIDC token that NuGet/login exchanges for a nuget.org API key, and
+  # that the attest actions exchange for a short-lived Sigstore signing certificate.
   id-token: write
+  # Lets the attest actions store the signed provenance and SBOM attestations on the repository.
+  attestations: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -50,6 +53,25 @@ jobs:
             echo "publish=$publish"
           } >> "$GITHUB_OUTPUT"
           echo "Version $version (prerelease: $prerelease, publish: $publish)"
+
+      # A tag signed with a GPG or SSH key that GitHub knows for its author shows as "Verified". The
+      # released files are signed by the attestation steps below whatever the tag, so an unsigned or
+      # lightweight tag is reported as a warning rather than failing the release.
+      - name: Check tag signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}")
+          if [ "$(jq -r '.object.type' <<< "$ref")" != "tag" ]; then
+            echo "::warning::${GITHUB_REF_NAME} is a lightweight tag, so it cannot be signed. Use 'git tag -s'."
+            exit 0
+          fi
+          tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
+          if [ "$(jq -r '.verification.verified' <<< "$tag")" = "true" ]; then
+            echo "Tag ${GITHUB_REF_NAME} has a verified signature."
+          else
+            echo "::warning::Tag ${GITHUB_REF_NAME} is not signed with a verified key ($(jq -r '.verification.reason' <<< "$tag")). Use 'git tag -s'."
+          fi
 
       # The tag overrides <Version> with -p:Version, but local builds and pack-unity.ps1 without
       # -Version read the csproj value. Fail when the two disagree so the csproj never goes stale.
@@ -96,9 +118,34 @@ jobs:
           dotnet pack src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj -c Release --no-build
           -p:Version=${{ steps.version.outputs.version }} -o artifacts/nuget
 
+      # nuget.org validates the .snupkg only after the push, when the .nupkg is already public.
+      - name: Verify symbol package
+        run: dotnet run --file build/verify-symbols.cs -- artifacts/nuget
+
       - name: Pack Unity
         shell: pwsh
         run: ./build/pack-unity.ps1 -SkipBuild -Version '${{ steps.version.outputs.version }}'
+
+      # The files that ship, gathered in one place so the SBOM and the attestations cover exactly them.
+      - name: Collect release files
+        run: |
+          mkdir -p artifacts/release
+          cp artifacts/nuget/*.nupkg artifacts/nuget/*.snupkg artifacts/unity/*.unitypackage artifacts/unity/*.tgz \
+            artifacts/release/
+
+      # SPDX 2.2 SBOM from Microsoft's sbom-tool: every release file with its SHA-256, and every NuGet
+      # package the shipped projects restore (from their project.assets.json). The .nuspec files pack
+      # leaves in obj/ are deleted first so the package does not list itself as its own dependency.
+      - name: Generate SBOM
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          dotnet tool install --global Microsoft.Sbom.DotNetTool --version 4.1.13
+          find src -path '*/obj/*' -name '*.nuspec' -delete
+          sbom-tool generate -b artifacts/release -bc src -pn ObjectPoolLinter -pv "$version" \
+            -ps "Joe Zhuo" -nsb "https://github.com/${GITHUB_REPOSITORY}" -V Warning \
+            -cd "--DirectoryExclusionList **/bin/**"
+          mv artifacts/release/_manifest/spdx_2.2/manifest.spdx.json "artifacts/ObjectPoolLinter-$version.spdx.json"
+          rm -rf artifacts/release/_manifest
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -106,11 +153,27 @@ jobs:
           name: release-${{ steps.version.outputs.version }}
           path: |
             artifacts/release-notes.md
-            artifacts/nuget/*.nupkg
-            artifacts/nuget/*.snupkg
-            artifacts/unity/*.unitypackage
-            artifacts/unity/*.tgz
+            artifacts/release/*
+            artifacts/*.spdx.json
           if-no-files-found: error
+
+      # Sigstore signing through GitHub artifact attestations: each release file gets a signed SLSA
+      # build provenance statement tying its SHA-256 to this repository, workflow and commit, and a
+      # signed statement binding the SBOM to it. Keyless: the signing certificate is issued for this
+      # run's OIDC identity, and the signatures are recorded in Sigstore's public transparency log.
+      # Anyone can check a download with `gh attestation verify <file> --repo <owner>/<repo>`.
+      - name: Attest build provenance
+        if: steps.version.outputs.publish == 'true'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: artifacts/release/*
+
+      - name: Attest SBOM
+        if: steps.version.outputs.publish == 'true'
+        uses: actions/attest-sbom@v4
+        with:
+          subject-path: artifacts/release/*
+          sbom-path: artifacts/ObjectPoolLinter-${{ steps.version.outputs.version }}.spdx.json
 
       # Trusted Publishing: the job's GitHub OIDC token is exchanged for a short-lived nuget.org API
       # key (valid for one hour), so no long-lived key is stored in the repository. nuget.org only
@@ -167,10 +230,8 @@ jobs:
             --notes-file artifacts/release-notes.md \
             --verify-tag \
             "${flags[@]}" \
-            artifacts/unity/*.unitypackage \
-            artifacts/unity/*.tgz \
-            artifacts/nuget/*.nupkg \
-            artifacts/nuget/*.snupkg
+            artifacts/release/* \
+            "artifacts/ObjectPoolLinter-${{ steps.version.outputs.version }}.spdx.json"
 
       - name: Dry run summary
         if: steps.version.outputs.publish != 'true'

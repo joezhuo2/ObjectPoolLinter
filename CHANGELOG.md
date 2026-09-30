@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.8.3] - 2026-09-29
+
+CI and release workflow only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.8.2, and the package ships the same assemblies.
+
+### Added
+- **Symbol package validation.** A new `build/verify-symbols.cs` (run with
+  `dotnet run --file build/verify-symbols.cs -- artifacts/nuget`) checks the `.snupkg` the way
+  nuget.org does after a push: same id and version as the `.nupkg`, the `SymbolsPackage` type, nothing
+  but `.pdb` files, one `.pdb` for every shipped `.dll`, every `.pdb` portable, every `.pdb` id matching
+  the CodeView debug entry of its `.dll` (so a debugger actually loads it), and Source Link in every
+  `.pdb`. It fails with one line per problem. The build workflow runs it on every platform after
+  packing, and the release workflow runs it before anything is published, so a bad symbol package
+  fails CI instead of being rejected by nuget.org after the package is already public.
+- **Signed releases.** The release workflow signs every released file (`.nupkg`, `.snupkg`,
+  `.unitypackage`, `.tgz`) with Sigstore through GitHub artifact attestations: a SLSA build provenance
+  attestation ties each file's SHA-256 to this repository, the `release.yml` workflow and the tagged
+  commit. Signing is keyless, so there is no key to store or rotate. Check a download with
+  `gh attestation verify <file> --repo joezhuo2/ObjectPoolLinter`.
+- **SBOM.** Each release generates an SPDX 2.2 SBOM with Microsoft's `sbom-tool`, listing every
+  released file with its hash and every NuGet package the shipped projects restore. It is attached to
+  the GitHub release as `ObjectPoolLinter-<version>.spdx.json`, included in the workflow artifact
+  (dry runs too), and bound to the released files by a signed SBOM attestation.
+- **Tag signature check.** The release workflow reports whether the pushed tag carries a signature
+  GitHub verifies. An unsigned or lightweight tag is a warning, not a failure, since the released
+  files are signed either way; sign tags with `git tag -s`.
+
+### Changed
+- The README's [Releases](README.md#releases) section describes the symbol check, the attestations,
+  the SBOM and how to verify a download.
+
 ## [v1.8.2] - 2026-09-29
 
 Release workflow only: the analyzers, code fixes, generator and suppressor are unchanged from 1.8.1,
@@ -1483,7 +1514,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.3...HEAD
+[v1.8.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.2...v1.8.3
 [v1.8.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.1...v1.8.2
 [v1.8.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.0...v1.8.1
 [v1.8.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.7.0...v1.8.0
