@@ -484,3 +484,5 @@ $RECYCLE.BIN/
 RELEASE_CHECKLIST.md
 release_plan.md
 graphify-out/
+
+.VSCodeCounter/

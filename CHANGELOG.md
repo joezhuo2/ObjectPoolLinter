@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.8.4] - 2026-09-30
+
+Repository documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
+1.8.3, and the package ships the same assemblies.
+
+### Added
+- **`CONTRIBUTING.md`.** Covers setting up the repository (the .NET 10 SDK and PowerShell 7, no Unity
+  needed), the repository layout, every check CI runs and how to run it locally (tests against both
+  reference assembly sets, the 90% coverage floor, sample verification, formatting, the vulnerability
+  check, `-warnaserror`), packing and verifying the NuGet and Unity artifacts, the rules for a change
+  (Roslyn 3.8 only, central package versions, tests against the shared Unity stub, analyzer release
+  tracking, a rule page per diagnostic, a changelog entry) and the pull request workflow.
+- **`SECURITY.md`.** Supported versions, private reporting through GitHub's
+  [Report a vulnerability](https://github.com/joezhuo2/ObjectPoolLinter/security/advisories/new) form,
+  response times, what is in and out of scope for a tool that runs inside the compiler and the IDE, and
+  how to verify a release's attestations.
+- **Issue and pull request templates.** Issue forms for bug reports (kind of problem, diagnostic ID,
+  a reproducing snippet, expected and actual behavior, `.editorconfig` settings, version, install
+  method and host) and feature requests, with blank issues turned off and a link that sends security
+  reports to the private form. The pull request template carries a checklist matching the CI checks.
+
+### Changed
+- The README gains a [Contributing](README.md#contributing) section pointing to the new files.
+
 ## [v1.8.3] - 2026-09-29
 
 CI and release workflow only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1514,7 +1538,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.3...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.4...HEAD
+[v1.8.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.3...v1.8.4
 [v1.8.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.2...v1.8.3
 [v1.8.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.1...v1.8.2
 [v1.8.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.0...v1.8.1

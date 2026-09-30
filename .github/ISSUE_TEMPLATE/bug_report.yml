@@ -1,0 +1,93 @@
+name: Bug report
+description: A crash, a wrong code fix, a missed allocation or a diagnostic on code that does not allocate.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security problem, do not use this form; see [SECURITY.md](https://github.com/joezhuo2/ObjectPoolLinter/blob/main/SECURITY.md).
+        Check [Known limitations](https://github.com/joezhuo2/ObjectPoolLinter#known-limitations) first: some gaps are deliberate.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of problem
+      options:
+        - False positive (reported, but does not allocate or is not a hot path)
+        - False negative (allocates in a hot path, not reported)
+        - Wrong or broken code fix
+        - Source generator ([ObjectPool]) problem
+        - Crash or analyzer exception (AD0001, CS8785)
+        - Configuration (.editorconfig) problem
+        - Packaging or installation problem
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: diagnostic
+    attributes:
+      label: Diagnostic ID
+      description: The rule involved, if any.
+      placeholder: OPL002
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Code that reproduces it
+      description: The smallest C# snippet that shows the problem, including the MonoBehaviour and hot method around it.
+      render: csharp
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have been reported, or what the code fix should have produced.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead. Paste the full diagnostic message or exception text.
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Any `object_pool_linter.*` or `dotnet_diagnostic.OPL*` lines from your .editorconfig.
+      render: ini
+
+  - type: input
+    id: version
+    attributes:
+      label: ObjectPoolLinter version
+      placeholder: 1.8.4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed from
+      options:
+        - .unitypackage
+        - UPM tarball
+        - NuGet package
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Host and version
+      description: Unity, Visual Studio, Rider, VS Code or the .NET SDK, with its version.
+      placeholder: Unity 6000.4.6f1
+    validations:
+      required: true

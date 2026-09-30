@@ -234,7 +234,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.8.3.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.8.4.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -633,6 +633,15 @@ reported, even when it happens to return the same object each time. See
 ([Automatic suppressions](#automatic-suppressions)). A guard behind a method call or a property, and
 a latch on an instance field, are not recognized; `cached_field` conversely suppresses an assignment
 to a field even when a fresh object is assigned on every frame.
+
+## Contributing
+
+Bug reports, false-positive reports and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md)
+covers setting up the repository, the checks CI runs and what a pull request needs. Open an issue
+with the [bug report or feature request form](https://github.com/joezhuo2/ObjectPoolLinter/issues/new/choose).
+
+Report security problems privately, as described in [SECURITY.md](SECURITY.md), not in a public
+issue.
 
 ## License
 
