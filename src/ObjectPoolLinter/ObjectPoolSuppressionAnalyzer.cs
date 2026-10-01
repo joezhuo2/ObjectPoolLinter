@@ -50,8 +50,10 @@ namespace ObjectPoolLinter
         private static readonly ImmutableDictionary<(SuppressionKind Kind, string DiagnosticId), SuppressionDescriptor> Descriptors =
             CreateDescriptors();
 
+        /// <inheritdoc/>
         public override ImmutableArray<SuppressionDescriptor> SupportedSuppressions => Descriptors.Values.ToImmutableArray();
 
+        /// <inheritdoc/>
         public override void ReportSuppressions(SuppressionAnalysisContext context)
         {
             foreach (var diagnostic in context.ReportedDiagnostics)

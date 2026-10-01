@@ -12,12 +12,17 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace ObjectPoolLinter
 {
-    // OPL002: allocations that have no `new` in the source. OPL001 owns `new` expressions (including a
-    // struct boxed as it is created) and Instantiate; this rule owns everything the compiler or the
-    // base class library allocates on the code's behalf.
+    /// <summary>
+    /// Reports OPL002: allocations inside a hot path that have no <c>new</c> in the source, such as string
+    /// concatenation and interpolation, capturing lambdas, method-group delegates, implicit <c>params</c>
+    /// arrays, LINQ, boxing, iterator and <c>async</c> state machines, and <c>foreach</c> enumerators
+    /// obtained through an interface. OPL001 owns <c>new</c> expressions and <c>Instantiate</c>; this rule
+    /// owns everything the compiler or the base class library allocates on the code's behalf.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class HiddenAllocationAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL002</c>.</summary>
         public const string DiagnosticId = "OPL002";
 
         private const string Category = "Performance";
@@ -50,8 +55,10 @@ namespace ObjectPoolLinter
 
         private static readonly string[] KindNames = { "string", "delegate", "params", "linq", "boxing", "iterator", "async", "enumerator" };
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

@@ -63,6 +63,70 @@ public class Hud : MonoBehaviour
             await VerifyAsync(source, Diagnostic("string concatenation"));
         }
 
+        // `+` is left-associative, so the outermost operator is the last one, but its span starts at the
+        // first operand: a chain split across lines is reported on the line where it starts.
+        [Fact]
+        public async Task StringConcatenation_MultiLineChain_ReportsFromTheFirstOperand()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    int hp, mp, xp;
+
+    void Update()
+    {
+        var status = {|#0:""hp: "" + hp
+            + "" mp: "" + mp
+            + "" xp: "" + xp|};
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("string concatenation"));
+        }
+
+        [Fact]
+        public async Task StringConcatenation_ParenthesizedChain_ReportsOnce()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    string a = ""a"", b = ""b"", c = ""c"";
+
+    void Update()
+    {
+        var text = {|#0:a + (b + c)|};
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("string concatenation"));
+        }
+
+        [Fact]
+        public async Task StringConcatenation_IntegerAdditionInsideTheChain_IsNotReportedSeparately()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Hud : MonoBehaviour
+{
+    int hp, mp;
+
+    void Update()
+    {
+        var text = {|#0:""total: "" + (hp + mp)|};
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("string concatenation"));
+        }
+
         [Fact]
         public async Task ConstantConcatenation_DoesNotReport()
         {
@@ -455,6 +519,31 @@ public class Squad : MonoBehaviour
     void Update()
     {
         var alive = {|#0:hp.Where(h => h > 0).Select(h => h * 2).ToList()|};
+    }
+}
+";
+
+            await VerifyAsync(source, Diagnostic("LINQ Where().Select().ToList()"));
+        }
+
+        [Fact]
+        public async Task LinqChain_MultiLine_ReportsFromTheReceiver()
+        {
+            var source = @"
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+
+    void Update()
+    {
+        var alive = {|#0:hp
+            .Where(h => h > 0)
+            .Select(h => h * 2)
+            .ToList()|};
     }
 }
 ";

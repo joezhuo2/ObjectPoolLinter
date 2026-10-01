@@ -64,6 +64,8 @@ public class Simulation
         [InlineData("Tick(Single)")]
         [InlineData("Tick(System.Single)")]
         [InlineData("Simulation.Tick(float)")]
+        [InlineData("global::Simulation.Tick(float)")]
+        [InlineData("Tick(global::System.Single)")]
         public async Task HotMethodWithParameters_MatchesOnlyThatOverload(string entry)
         {
             await CreateTest<ObjectPoolAnalyzer>(
@@ -190,6 +192,33 @@ namespace Game
             await CreateTest<ObjectPoolAnalyzer>(
                     NamespacedHuds,
                     "object_pool_linter.excluded_types_regex = " + pattern,
+                    Allocation("new List<int>", "Update"))
+                .RunAsync();
+        }
+
+        // Names are matched without `global::`, and the regex is not rewritten, so a pattern that expects
+        // the prefix matches nothing and every type is still analyzed.
+        [Fact]
+        public async Task ExcludedTypesRegex_GlobalPrefixMatchesNothing()
+        {
+            var source = @"
+using UnityEngine;
+
+namespace Game.Debug
+{
+    public class Overlay : MonoBehaviour
+    {
+        void Update()
+        {
+            var a = {|#0:new System.Collections.Generic.List<int>()|};
+        }
+    }
+}
+";
+
+            await CreateTest<ObjectPoolAnalyzer>(
+                    source,
+                    @"object_pool_linter.excluded_types_regex = ^global::Game\.",
                     Allocation("new List<int>", "Update"))
                 .RunAsync();
         }

@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.0] - 2026-09-30
+
+Documentation and API reference. The analyzers, code fixes, generator and suppressor report exactly
+what 1.8.4 did; the assemblies change only by gaining XML documentation.
+
+### Added
+- **API reference documentation.** Both assemblies are built with `GenerateDocumentationFile`, and
+  `ObjectPoolLinter.xml` and `ObjectPoolLinter.CodeFixes.xml` ship in the NuGet package under
+  `analyzers/dotnet/cs/`, next to the DLLs. Every public type has a summary: the nine analyzers, the
+  suppressor, the `[ObjectPool]` generator and the three code fix providers, with their public
+  `DiagnosticId` and `AttributeHintName` constants; overrides inherit their documentation from Roslyn.
+  A public type or member without a doc comment now fails the build (CS1591 is an error in both
+  projects).
+- **[Migration guide](docs/migration.md).** Defines what only a major version may change (removing or
+  renumbering a diagnostic ID, raising a default severity, renaming an option or changing what a value
+  means, changing message arguments, raising the Roslyn floor, renaming an assembly), lists every 1.x
+  release that added a rule or detection which can change a build's warnings, with its default severity
+  and how to opt out, and covers the move from a 0.x build to 1.0.0.
+- [docs/configuration.md](docs/configuration.md#the-global-prefix) documents the `global::` prefix:
+  a leading `global::` is dropped from each `additional_hot_methods` and `excluded_types` entry, every
+  `global::` is dropped from parameter types, and `excluded_types_regex` is matched as written, so a
+  pattern expecting the prefix matches nothing.
+- [docs/configuration.md](docs/configuration.md#merging-key-by-key) explains how Roslyn merges
+  `.editorconfig` files key by key, last writer wins, with a worked example across a root file, a
+  folder file and a per-file section.
+- [docs/rules/OPL002.md](docs/rules/OPL002.md#where-a-chain-is-reported) explains where a chain is
+  reported: `+` is left-associative, so `a + b + c` is reported once, at the outermost `+`, whose span
+  starts at the first operand. A chain split across lines is reported on the line where it starts; the
+  same holds for a LINQ chain, reported from its receiver.
+- [docs/rules/OPL003.md](docs/rules/OPL003.md#renderermaterials-and-material-instances) explains what
+  reading `Renderer.materials` instantiates: per-renderer clones of the shared materials that break
+  batching and must be destroyed by hand, and `MaterialPropertyBlock` as the way to vary one renderer
+  without cloning.
+- OPL002 and OPL003 pages show a `[SuppressMessage]` example alongside the pragma, as OPL001's does.
+- The README's [Known limitations](README.md#known-limitations) cover code that does not compile:
+  Roslyn gives no "partial results" marker, so the README spells out what is silently missing. The
+  command-line compiler runs no analyzers at all when a declaration fails to compile; errors inside
+  method bodies still allow OPL001 to report `new MissingType`, but calls to unresolved members are not
+  matched; and in the IDE a `MonoBehaviour` whose base class does not resolve is not recognized.
+- Tests pin the chain locations (a multi-line concatenation, a parenthesized chain, integer addition
+  inside a chain, a multi-line LINQ chain) and the `global::` handling (`excluded_types`, parameter
+  types, and a regex that expects the prefix).
+
+### Changed
+- The README's Installation section opens with a callout: Unity's own editor compile has not been
+  verified to pass `object_pool_linter.*` options to analyzers, what that means for each option, and
+  that `dotnet_diagnostic.*.severity` is not affected.
+- The README no longer says the package is not yet on nuget.org. It is published there from 1.0.0 on;
+  not every GitHub release is pushed to nuget.org, so the newest version there can trail the releases
+  page.
+- The README says precisely where `additional_hot_methods` applies: on any type, not only
+  `MonoBehaviour`-derived ones, but only in a compilation that references `UnityEngine.MonoBehaviour`.
+- `CONTRIBUTING.md` requires a doc comment on every public member and points breaking changes and new
+  rules at the migration guide. `SECURITY.md` lists 1.9.x as the supported version.
+
 ## [v1.8.4] - 2026-09-30
 
 Repository documentation only: the analyzers, code fixes, generator and suppressor are unchanged from
@@ -1538,7 +1593,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.4...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.0...HEAD
+[v1.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.4...v1.9.0
 [v1.8.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.3...v1.8.4
 [v1.8.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.2...v1.8.3
 [v1.8.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.1...v1.8.2

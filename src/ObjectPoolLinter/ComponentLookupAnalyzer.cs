@@ -5,12 +5,17 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace ObjectPoolLinter
 {
-    // OPL009: `GetComponent<T>()` and the scene searches (`GameObject.Find`, `FindObjectOfType`, ...)
-    // inside a hot path. They allocate nothing, but repeat a component lookup or a scene walk every
-    // frame to get back the same object; that belongs in Awake or Start, with the result kept in a field.
+    /// <summary>
+    /// Reports OPL009: <c>GetComponent&lt;T&gt;()</c>, <c>TryGetComponent</c>,
+    /// <c>GetComponentInChildren</c>/<c>InParent</c> on the same object, and the scene searches
+    /// (<c>GameObject.Find</c>, <c>FindWithTag</c>, <c>FindObjectOfType</c>, ...) inside a hot path. They
+    /// allocate nothing, but repeat a lookup every frame to get back the same object; that belongs in
+    /// <c>Awake</c> or <c>Start</c>, with the result kept in a field.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class ComponentLookupAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL009</c>.</summary>
         public const string DiagnosticId = "OPL009";
 
         private const string Category = "Performance";
@@ -41,8 +46,10 @@ namespace ObjectPoolLinter
         private const string ComponentAdvice = "Get it once in Awake or Start and keep it in a field";
         private const string SceneAdvice = "Find it once in Awake or Start and keep it in a field";
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

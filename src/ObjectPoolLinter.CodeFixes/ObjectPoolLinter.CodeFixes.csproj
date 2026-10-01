@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ObjectPoolLinter</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- XML docs for the public API ship in the NuGet package next to the DLL. A public type or
+         member without a doc comment fails the build. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

@@ -11,15 +11,24 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace ObjectPoolLinter
 {
+    /// <summary>
+    /// Code fixes for OPL001: replaces an allocation with a call to a matching <c>{TypeName}Pool.Get</c>,
+    /// writes that pool class when none is in scope, rents a local array from
+    /// <c>ArrayPool&lt;T&gt;.Shared</c> inside a <c>try</c>/<c>finally</c>, or adds a pooling TODO
+    /// comment.
+    /// </summary>
     [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(ObjectPoolCodeFixProvider)), Shared]
     public sealed class ObjectPoolCodeFixProvider : CodeFixProvider
     {
+        /// <inheritdoc/>
         public sealed override ImmutableArray<string> FixableDiagnosticIds =>
             ImmutableArray.Create(ObjectPoolAnalyzer.DiagnosticId);
 
+        /// <inheritdoc/>
         public sealed override FixAllProvider GetFixAllProvider() =>
             WellKnownFixAllProviders.BatchFixer;
 
+        /// <inheritdoc/>
         public sealed override async Task RegisterCodeFixesAsync(CodeFixContext context)
         {
             var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);

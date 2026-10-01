@@ -10,12 +10,16 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace ObjectPoolLinter
 {
-    // OPL007: a NativeArray<T>, NativeList<T>, NativeHashMap<TKey, TValue> or other native container
-    // that is allocated and never disposed. The memory lives outside the managed heap, so the garbage
-    // collector never frees it; Unity only logs the leak, and inside Update it leaks every frame.
+    /// <summary>
+    /// Reports OPL007: a <c>NativeArray&lt;T&gt;</c>, <c>NativeList&lt;T&gt;</c> or other native
+    /// container allocated with <c>Allocator.TempJob</c> or <c>Allocator.Persistent</c> that is not
+    /// disposed on every path out of its method or, kept in a field, never disposed by its type. The
+    /// memory lives outside the managed heap, so the garbage collector never frees it.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class NativeContainerDisposeAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL007</c>.</summary>
         public const string DiagnosticId = "OPL007";
 
         private const string Category = "Reliability";
@@ -45,8 +49,10 @@ namespace ObjectPoolLinter
         private static readonly ImmutableHashSet<string> SelfReleasingAllocators =
             ImmutableHashSet.Create(System.StringComparer.Ordinal, "Temp", "None", "Invalid");
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

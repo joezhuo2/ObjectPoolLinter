@@ -1230,6 +1230,8 @@ namespace Game
         [Theory]
         [InlineData("LoadingScreen")]
         [InlineData("Game.UI.LoadingScreen")]
+        [InlineData("global::Game.UI.LoadingScreen")]
+        [InlineData("global::LoadingScreen")]
         public async Task ExcludedType_SuppressesBuiltInMessages(string entry)
         {
             var source = @"

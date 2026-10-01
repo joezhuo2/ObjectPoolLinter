@@ -95,6 +95,22 @@ rule's own severity.
 
 Option names are not case-sensitive. Method and type names in the values are.
 
+### The `global::` prefix
+
+A type or method written with C#'s `global::` alias qualifier is accepted and the prefix is dropped
+before matching, silently: it is not reported by OPL004, and it never changes what an entry matches.
+
+| Where | What is dropped | Example | Read as |
+| --- | --- | --- | --- |
+| Each entry of `additional_hot_methods` and `excluded_types` | A leading `global::`, once | `global::Game.AI.EnemyBrain.Think` | `Game.AI.EnemyBrain.Think` |
+| Each parameter type in an `additional_hot_methods` parameter list | Every `global::`, anywhere in the type | `Step(global::UnityEngine.Vector3, List<global::Game.Cell>)` | `Step(UnityEngine.Vector3, List<Game.Cell>)` |
+| `excluded_types_regex` | Nothing | `^global::Game\.` | Matches nothing: the names it is matched against never start with `global::` |
+
+The prefix is matched exactly, in lowercase. Any other spelling is kept as written: `Global::Game.Hud`
+in `excluded_types` matches no type, and `Global::Game.Hud.Tick` in `additional_hot_methods` is
+reported by OPL004 as not a method name. Dropping it does not make a name fully qualified: `global::Hud` is the
+simple name `Hud` and matches a `Hud` in any namespace, not only one in the global namespace.
+
 ## Hot methods (`additional_hot_methods`)
 
 Out of the box the rules look inside the 18 per-frame Unity messages (`Update`, `FixedUpdate`,
@@ -333,6 +349,56 @@ object_pool_linter.linq_severity = none
 
 Files under `Debug/` treat `Tick` and `DrawDebug` as hot and ignore LINQ; every other file keeps the
 root's settings.
+
+### Merging, key by key
+
+For each source file the compiler builds one set of options by walking the matching sections in
+precedence order: global configs first, then `.editorconfig` files from the root down to the file's own
+folder, and within each file from top to bottom. Every key is resolved on its own, and **the last
+writer of a key wins**. Keys that a later section does not mention keep the value they already had.
+
+The analyzers read that resolved set per file and never see which file a value came from, so there is
+no way to append to an inherited list or to clear one key without restating it.
+
+A worked example, for `Assets/Scripts/AI/EnemyBrain.cs`:
+
+```ini
+# .editorconfig at the project root, next to Assets/
+root = true
+
+[*.cs]
+object_pool_linter.additional_hot_methods = Tick, OnPreCull
+object_pool_linter.excluded_types = LoadingScreen
+object_pool_linter.linq_severity = warning
+
+[Assets/Scripts/AI/**.cs]
+object_pool_linter.linq_severity = suggestion
+```
+
+```ini
+# Assets/Scripts/AI/.editorconfig
+[*.cs]
+object_pool_linter.additional_hot_methods = Think
+object_pool_linter.boxing_severity = warning
+
+[EnemyBrain.cs]
+object_pool_linter.boxing_severity = none
+```
+
+| Key | Writers, in order | Resolved for `EnemyBrain.cs` |
+| --- | --- | --- |
+| `additional_hot_methods` | root `[*.cs]`, then `AI/` `[*.cs]` | `Think` — `Tick` and `OnPreCull` are **not** hot here |
+| `excluded_types` | root `[*.cs]` | `LoadingScreen`, inherited unchanged |
+| `linq_severity` | root `[*.cs]`, then root `[Assets/Scripts/AI/**.cs]` | `suggestion`, the later section in the same file |
+| `boxing_severity` | `AI/` `[*.cs]`, then `AI/` `[EnemyBrain.cs]` | `none` |
+
+`Assets/Scripts/AI/Squad.cs`, in the same folder, resolves the same except for `boxing_severity`,
+which is `warning` because the `[EnemyBrain.cs]` section does not match it. To keep `Tick` and
+`OnPreCull` hot under `AI/` as well, write `additional_hot_methods = Tick, OnPreCull, Think` there.
+
+Global configs have no top-to-bottom order between them. Among global configs, the one with the
+higher `global_level` wins a key; two at the same level that disagree produce a compiler warning and
+the key is ignored, as described above.
 
 ## Unity notes
 

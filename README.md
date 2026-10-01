@@ -43,12 +43,22 @@ IDE that ships Roslyn 3.8 or later.
 | VS Code | Current releases with the C# extension (or C# Dev Kit) | Analyzer diagnostics need background analysis enabled (`dotnet.backgroundAnalysis.analyzerDiagnosticsScope`). |
 
 The NuGet package has no dependencies of its own and adds nothing to your build output: it is a
-development-time analyzer reference only.
+development-time analyzer reference only. It carries the XML documentation of both assemblies' public
+types (the analyzers, the suppressor, the generator and the code fix providers) next to the DLLs, for
+tools that host the analyzers or test against them.
 
 Hosts older than Roslyn 3.8 are not supported: the analyzer recognizes C# 9 target-typed `new()`,
 which Roslyn 3.8 introduced.
 
 ## Installation
+
+> **Caveat: the `object_pool_linter.*` options in `.editorconfig` are not verified to reach the analyzers in
+> Unity's own editor compile.** `dotnet build`, Visual Studio, Rider and VS Code pass them through, so
+> additional hot methods, excluded types, per-kind OPL002 severities and the suppression switches work
+> there. In the Unity Console the rules may run with the defaults instead: the 18 built-in messages,
+> nothing excluded, every automatic suppression on. If the IDE and the Console disagree, this is the
+> likely cause. `dotnet_diagnostic.<rule>.severity` is a standard Roslyn setting and is not affected.
+> See [Unity notes](docs/configuration.md#unity-notes).
 
 ### Unity
 
@@ -122,12 +132,19 @@ dotnet add package ObjectPoolLinter
 ```
 
 This adds it as an analyzer reference, so the rule runs on every build with no extra wiring. The
-package is not yet on nuget.org; until the first tagged release, reference the projects directly
-(see `samples/SampleUnityCode/SampleUnityCode.csproj`) or use the Unity artifacts above.
+package is published on nuget.org as
+[`ObjectPoolLinter`](https://www.nuget.org/packages/ObjectPoolLinter), from 1.0.0 on. Not every
+release on the [releases page](https://github.com/joezhuo2/ObjectPoolLinter/releases) is pushed
+there, so the newest version on nuget.org can trail the newest GitHub release; the Unity artifacts
+are attached to every release. To build against unreleased source, reference the projects directly
+(see `samples/SampleUnityCode/SampleUnityCode.csproj`).
 
 The rules only run when the compilation references `UnityEngine.MonoBehaviour`, so a project with no
 UnityEngine reference gets no diagnostics. The built-in messages fire only on types deriving from
-`MonoBehaviour`; methods added through [Configuration](#configuration) fire on any type.
+`MonoBehaviour`. Methods added through [Configuration](#configuration) fire on any type, not only
+types deriving from `MonoBehaviour`, but the compilation must still reference
+`UnityEngine.MonoBehaviour` for any rule to run: in a plain .NET project with no UnityEngine
+reference, an `additional_hot_methods` entry reports nothing.
 
 ### Building from source
 
@@ -234,7 +251,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.8.4.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.9.0.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -261,6 +278,9 @@ Each rule is documented in its own page, which also covers how to change its sev
 Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing. Four shapes never report in the first place, because the analyzer
 suppresses them — see [Automatic suppressions](docs/suppressions.md).
+
+Upgrading: what a major version may change, what each 1.x release added that can change a build's
+warnings, and what to change for each major version are in the [migration guide](docs/migration.md).
 
 ### Configuration
 
@@ -633,6 +653,25 @@ reported, even when it happens to return the same object each time. See
 ([Automatic suppressions](#automatic-suppressions)). A guard behind a method call or a property, and
 a latch on an instance field, are not recognized; `cached_field` conversely suppresses an assignment
 to a field even when a fresh object is assigned on every frame.
+
+**Code that does not compile gets partial results.** The analyzers work from Roslyn's semantic model,
+and where a type or member cannot be resolved (a missing reference, a typo, an assembly Unity has not
+compiled yet) they see an error symbol and report what they can around it. Diagnostic IDs and messages
+do not change; nothing marks a result as partial, so the gaps are silent:
+
+- The command-line compiler (`dotnet build`) stops before running analyzers when a *declaration* does
+  not compile, such as a class whose base type is missing. That build reports the `CS` errors and no
+  OPL diagnostics at all, for any file in the project. Unity runs the same compiler, but its behaviour
+  here has not been checked.
+- Errors inside method bodies do not stop the analyzers. `new MissingType()` in `Update` is still
+  reported by OPL001, as `new MissingType`, because the expression is still a `new`; a call to an
+  unresolved method or property is not matched by OPL002, OPL003, OPL008 or OPL009, which need to know
+  which member is called.
+- The IDE analyzes as you type, errors or not. A `MonoBehaviour` whose base class (or a class between
+  it and `MonoBehaviour`) does not resolve is not recognized as a `MonoBehaviour`, so its `Update`
+  reports nothing until the reference is fixed.
+
+Fix the compile errors first, then trust the rule results.
 
 ## Contributing
 

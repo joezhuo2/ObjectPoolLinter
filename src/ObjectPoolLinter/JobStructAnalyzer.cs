@@ -7,13 +7,17 @@ using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace ObjectPoolLinter
 {
-    // OPL006: a field of managed type in a Unity job struct. Scheduling copies the struct into native
-    // memory, which the garbage collector cannot see, so the job system refuses any struct holding a
-    // reference and Schedule() throws InvalidOperationException. The compiler accepts it; this rule
-    // moves the failure from play mode to the build.
+    /// <summary>
+    /// Reports OPL006: a field of managed type in a struct implementing a Unity job interface. Scheduling
+    /// copies the struct into native memory, which the garbage collector cannot see, so the job system
+    /// refuses any struct holding a reference and <c>Schedule()</c> throws
+    /// <see cref="System.InvalidOperationException"/>. The compiler accepts it; this rule moves the
+    /// failure from play mode to the build.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class JobStructAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL006</c>.</summary>
         public const string DiagnosticId = "OPL006";
 
         private const string Category = "Usage";
@@ -58,8 +62,10 @@ namespace ObjectPoolLinter
         private const string NativeContainerMetadataName = "Unity.Collections.LowLevel.Unsafe.NativeContainerAttribute";
         private const string NativeSetClassTypeToNullOnScheduleMetadataName = "Unity.Collections.LowLevel.Unsafe.NativeSetClassTypeToNullOnScheduleAttribute";
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

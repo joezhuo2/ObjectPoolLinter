@@ -17,8 +17,12 @@ using static ObjectPoolLinter.CodeFixSupport;
 
 namespace ObjectPoolLinter
 {
-    // Rewrites for OPL002. Each fix is offered only for the shapes it can rewrite without changing what
-    // the code does; every other shape gets no fix, and docs/rules/OPL002.md lists the manual fix.
+    /// <summary>
+    /// Code fixes for OPL002: caches a capturing lambda or a method-group delegate in a field assigned in
+    /// <c>Awake()</c>, builds an interpolated string with a reused <c>StringBuilder</c>, and turns a
+    /// simple <c>Where</c>/<c>Select</c>/<c>ToList</c> chain into a loop filling a reused list. Each fix
+    /// is offered only for the shapes it can rewrite without changing what the code does.
+    /// </summary>
     [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(HiddenAllocationCodeFixProvider)), Shared]
     public sealed class HiddenAllocationCodeFixProvider : CodeFixProvider
     {
@@ -27,13 +31,16 @@ namespace ObjectPoolLinter
         internal const string UseStringBuilderKey = "ObjectPoolLinterUseStringBuilder";
         internal const string LinqToLoopKey = "ObjectPoolLinterLinqToLoop";
 
+        /// <inheritdoc/>
         public override ImmutableArray<string> FixableDiagnosticIds =>
             ImmutableArray.Create(HiddenAllocationAnalyzer.DiagnosticId);
 
         // No fix-all: each fix picks a free field name from the document as it is, so two fixes applied in
         // one batch could pick the same name.
+        /// <inheritdoc/>
         public override FixAllProvider? GetFixAllProvider() => null;
 
+        /// <inheritdoc/>
         public override async Task RegisterCodeFixesAsync(CodeFixContext context)
         {
             var document = context.Document;

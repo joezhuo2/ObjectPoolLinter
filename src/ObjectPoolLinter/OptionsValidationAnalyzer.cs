@@ -7,11 +7,15 @@ using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace ObjectPoolLinter
 {
-    // OPL004: `object_pool_linter.*` options that do nothing, because the name is misspelled or the
-    // value cannot be used. Without it, `object_pool_linter.exclude_types = Foo` is silently ignored.
+    /// <summary>
+    /// Reports OPL004: an <c>object_pool_linter.*</c> option in <c>.editorconfig</c> or
+    /// <c>.globalconfig</c> that has no effect, because its name is not recognized or its value cannot be
+    /// used. Without it, a misspelled option would be silently ignored.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class OptionsValidationAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL004</c>.</summary>
         public const string DiagnosticId = "OPL004";
 
         private const string Category = "Configuration";
@@ -36,8 +40,10 @@ namespace ObjectPoolLinter
             customTags: "CompilationEnd"
         );
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

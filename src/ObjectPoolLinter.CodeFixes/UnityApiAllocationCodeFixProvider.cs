@@ -15,8 +15,12 @@ using static ObjectPoolLinter.CodeFixSupport;
 
 namespace ObjectPoolLinter
 {
-    // Rewrites for OPL003. As with OPL002, each fix is offered only for the shapes it can rewrite without
-    // changing what the code does; docs/rules/OPL003.md lists the manual fix for everything else.
+    /// <summary>
+    /// Code fixes for OPL003: rewrites a <c>tag</c> comparison to <c>CompareTag()</c>,
+    /// <c>GetComponents*&lt;T&gt;()</c> to the overload filling a reused <c>List&lt;T&gt;</c>, and
+    /// <c>Input.touches</c> to <c>Input.touchCount</c> with <c>Input.GetTouch(i)</c>. Each fix is offered
+    /// only for the shapes it can rewrite without changing what the code does.
+    /// </summary>
     [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(UnityApiAllocationCodeFixProvider)), Shared]
     public sealed class UnityApiAllocationCodeFixProvider : CodeFixProvider
     {
@@ -24,13 +28,16 @@ namespace ObjectPoolLinter
         internal const string UseBufferOverloadKey = "ObjectPoolLinterUseBufferOverload";
         internal const string UseGetTouchKey = "ObjectPoolLinterUseGetTouch";
 
+        /// <inheritdoc/>
         public override ImmutableArray<string> FixableDiagnosticIds =>
             ImmutableArray.Create(UnityApiAllocationAnalyzer.DiagnosticId);
 
         // No fix-all: the buffer fix picks a free field name from the document as it is, so two fixes
         // applied in one batch could pick the same name.
+        /// <inheritdoc/>
         public override FixAllProvider? GetFixAllProvider() => null;
 
+        /// <inheritdoc/>
         public override async Task RegisterCodeFixesAsync(CodeFixContext context)
         {
             var document = context.Document;

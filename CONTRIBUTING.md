@@ -145,6 +145,12 @@ reports; a code fix needs a test of the fixed output.
 - Give each new rule a page under `docs/rules/` with what it reports, what it does not report and why,
   the code fixes, and how to suppress it. Point the descriptor's `HelpLinkUri` at that page.
 - Update the rule table and any affected sections of `README.md`.
+- A public type or member needs an XML doc comment; the build fails on a missing one (CS1591). An
+  `override` takes `/// <inheritdoc/>`.
+- A breaking change, as defined in [docs/migration.md](docs/migration.md#what-counts-as-a-breaking-change),
+  waits for the next major version and gets a section in that guide. A new rule, or a new detection in
+  an existing rule, gets a row in its
+  [Upgrading within 1.x](docs/migration.md#upgrading-within-1x) table.
 
 ### Changelog
 

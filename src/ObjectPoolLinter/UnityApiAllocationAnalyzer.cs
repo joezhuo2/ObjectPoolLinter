@@ -5,10 +5,15 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace ObjectPoolLinter
 {
-    // OPL003: Unity engine APIs that hand back freshly allocated memory on every call.
+    /// <summary>
+    /// Reports OPL003: a Unity engine API that returns newly allocated memory on every call (a member
+    /// returning an array, <c>Object.name</c>, <c>tag</c>, and a short list of members that build a new
+    /// string or object) inside a hot path.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class UnityApiAllocationAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL003</c>.</summary>
         public const string DiagnosticId = "OPL003";
 
         private const string Category = "Performance";
@@ -29,8 +34,10 @@ namespace ObjectPoolLinter
             helpLinkUri: HelpLinkUri
         );
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

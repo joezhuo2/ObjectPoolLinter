@@ -14,12 +14,14 @@ namespace ObjectPoolLinter
     [Generator]
     public sealed class ObjectPoolGenerator : ISourceGenerator
     {
+        /// <summary>The ID of the diagnostic the generator reports for a class it cannot pool, <c>OPL005</c>.</summary>
         public const string DiagnosticId = "OPL005";
 
         internal const string AttributeNamespace = "ObjectPoolLinter";
         internal const string AttributeSimpleName = "ObjectPool";
         internal const string AttributeTypeName = AttributeSimpleName + "Attribute";
         internal const string AttributeMetadataName = AttributeNamespace + "." + AttributeTypeName;
+        /// <summary>The hint name of the generated source file that declares <c>[ObjectPool]</c>.</summary>
         public const string AttributeHintName = AttributeTypeName + ".g.cs";
 
         internal const string PoolNameProperty = "PoolName";
@@ -40,11 +42,13 @@ namespace ObjectPoolLinter
             helpLinkUri: HelpLinkUri
         );
 
+        /// <inheritdoc/>
         public void Initialize(GeneratorInitializationContext context)
         {
             context.RegisterForSyntaxNotifications(() => new SyntaxReceiver());
         }
 
+        /// <inheritdoc/>
         public void Execute(GeneratorExecutionContext context)
         {
             // Roslyn 3.8 has no post-initialization step, so the attribute is added from here. The

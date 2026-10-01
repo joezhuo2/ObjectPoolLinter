@@ -7,9 +7,15 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace ObjectPoolLinter
 {
+    /// <summary>
+    /// Reports OPL001: a <c>new</c> expression (including a struct boxed as it is created) or a
+    /// <c>UnityEngine.Object.Instantiate</c> call inside a hot path, a frequently called Unity message
+    /// such as <c>Update</c> or a method listed in <c>object_pool_linter.additional_hot_methods</c>.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class ObjectPoolAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL001</c>.</summary>
         public const string DiagnosticId = "OPL001";
 
         private const string Category = "Performance";
@@ -34,8 +40,10 @@ namespace ObjectPoolLinter
 
         private const string UnityObjectMetadataName = "UnityEngine.Object";
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

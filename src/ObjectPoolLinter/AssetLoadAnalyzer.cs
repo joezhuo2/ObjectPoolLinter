@@ -5,12 +5,16 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace ObjectPoolLinter
 {
-    // OPL008: `Resources.Load` and Addressables `Load*` calls inside a hot path. Resources.Load looks
-    // the asset up by path on every call, and an Addressables load allocates an operation handle and
-    // its async state each time; either belongs in Awake or Start, with the result kept in a field.
+    /// <summary>
+    /// Reports OPL008: a <c>Resources.Load</c>, <c>Resources.LoadAsync</c>, Addressables <c>Load*</c> or
+    /// <c>AssetReference.Load*</c> call inside a hot path. <c>Resources.Load</c> looks the asset up by path
+    /// on every call, and an Addressables load allocates an operation handle and its async state each
+    /// time; either belongs in <c>Awake</c> or <c>Start</c>, with the result kept in a field.
+    /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class AssetLoadAnalyzer : DiagnosticAnalyzer
     {
+        /// <summary>The ID of the diagnostic this analyzer reports, <c>OPL008</c>.</summary>
         public const string DiagnosticId = "OPL008";
 
         private const string Category = "Performance";
@@ -38,8 +42,10 @@ namespace ObjectPoolLinter
         private const string ResourcesAdvice = "Load it once in Awake or Start and keep it in a field";
         private const string AddressablesAdvice = "Load it once in Awake or Start and keep the handle or its result in a field";
 
+        /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
+        /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
