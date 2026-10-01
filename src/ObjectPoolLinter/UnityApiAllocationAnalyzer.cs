@@ -150,7 +150,9 @@ namespace ObjectPoolLinter
 
                 var api = member.ContainingType.Name + "." + member.Name;
                 var returned = returnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-                context.ReportDiagnostic(Diagnostic.Create(Rule, node.GetLocation(), api, returned, methodName));
+                var diagnostic = Diagnostic.Create(Rule, node.GetLocation(), api, returned, methodName);
+                TelemetryCounts.Record(context.Compilation, diagnostic);
+                context.ReportDiagnostic(diagnostic);
             }
         }
     }

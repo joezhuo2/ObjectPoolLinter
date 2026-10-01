@@ -100,7 +100,9 @@ namespace ObjectPoolLinter
                     return;
 
                 var api = method.ContainingType.Name + "." + method.Name;
-                context.ReportDiagnostic(Diagnostic.Create(Rule, invocation.Syntax.GetLocation(), api, methodName, advice));
+                var diagnostic = Diagnostic.Create(Rule, invocation.Syntax.GetLocation(), api, methodName, advice);
+                TelemetryCounts.Record(context.Compilation, diagnostic);
+                context.ReportDiagnostic(diagnostic);
             }
 
             // `Resources.Load` and `Resources.LoadAsync`; `Resources.LoadAll` returns an array and is

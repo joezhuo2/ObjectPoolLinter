@@ -43,8 +43,9 @@ to OPL009 warnings. Those are expected.
 | `src/ObjectPoolLinter.CodeFixes` | Code fix providers. |
 | `src/ObjectPoolLinter.Package` | The NuGet package project. Holds `<Version>`. |
 | `tests/ObjectPoolLinter.Tests` | xUnit tests using `Microsoft.CodeAnalysis.Testing`. |
+| `benchmarks/ObjectPoolLinter.Benchmarks` | BenchmarkDotNet project measuring the analyzers' build-time cost ([docs/benchmarks.md](docs/benchmarks.md)). |
 | `samples/SampleUnityCode` | End-to-end sample compiled with the analyzer attached. |
-| `docs/` | Per-rule pages (`docs/rules/OPLxxx.md`), configuration, suppressions, the generator and Unity packaging. |
+| `docs/` | Per-rule pages (`docs/rules/OPLxxx.md`), configuration, suppressions, telemetry, benchmarks, the generator and Unity packaging. |
 | `unity/` | Template for the UPM `package.json`. |
 | `build/` | Coverage, vulnerability, sample, symbol and Unity packing scripts. |
 
@@ -129,6 +130,12 @@ build in Unity, import the `.unitypackage` or add the tarball through the Packag
   analyzers built against 3.8.
 - Package versions live in `Directory.Packages.props`, not in project files.
 - Analyzers must be fast and allocation-light themselves. They run on every keystroke in the IDE.
+  A change to an analyzer's registration or matching should be measured with the benchmarks before
+  and after: [docs/benchmarks.md](docs/benchmarks.md#running-it) has the commands. CI builds the
+  benchmark project but does not run it.
+- A new rule that reports from source records its diagnostics with `TelemetryCounts.Record` next to
+  `ReportDiagnostic`, so the [telemetry](docs/telemetry.md) summary counts it. Telemetry never leaves
+  the machine: do not add anything to it that names a file, type, member or person.
 
 ### Tests
 
@@ -166,7 +173,8 @@ them, not how the code changed. The maintainer moves it under a version heading 
 4. Open a pull request and fill in the template. Keep one change per pull request; a refactor that a
    fix depends on can go in a separate commit of the same pull request.
 
-CI must pass before merge. Pull requests also run `dependency-review`, which fails if the change adds a
+GitHub requests a review from the code owners in `.github/CODEOWNERS` for the files a pull request
+touches. CI must pass before merge. Pull requests also run `dependency-review`, which fails if the change adds a
 package or action with a known vulnerability.
 
 ## Releases

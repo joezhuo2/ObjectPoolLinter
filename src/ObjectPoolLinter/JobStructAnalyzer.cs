@@ -131,7 +131,9 @@ namespace ObjectPoolLinter
                     var location = member.Locations.FirstOrDefault(l => l.IsInSource);
                     if (location == null) continue;
 
-                    context.ReportDiagnostic(Diagnostic.Create(Rule, location, member.Name, type.Name, problem));
+                    var diagnostic = Diagnostic.Create(Rule, location, member.Name, type.Name, problem);
+                    TelemetryCounts.Record(context.Compilation, diagnostic);
+                    context.ReportDiagnostic(diagnostic);
                 }
             }
 

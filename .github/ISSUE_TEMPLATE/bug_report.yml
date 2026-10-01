@@ -67,7 +67,7 @@ body:
     id: version
     attributes:
       label: ObjectPoolLinter version
-      placeholder: 1.9.0
+      placeholder: 1.9.1
     validations:
       required: true
 

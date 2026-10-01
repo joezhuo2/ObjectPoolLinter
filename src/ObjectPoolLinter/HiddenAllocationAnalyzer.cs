@@ -307,7 +307,10 @@ namespace ObjectPoolLinter
                     kind.Value,
                     DescribeStateMachine(kind.Value, method),
                     context.CancellationToken);
-                if (diagnostic != null) context.ReportDiagnostic(diagnostic);
+                if (diagnostic == null) return;
+
+                TelemetryCounts.Record(context.Compilation, diagnostic);
+                context.ReportDiagnostic(diagnostic);
             }
 
             // A `foreach` whose GetEnumerator returns IEnumerator<T> or IEnumerator rather than a concrete
@@ -358,7 +361,10 @@ namespace ObjectPoolLinter
                     AllocationKind.Enumerator,
                     "enumerator for foreach over " + Display(collectionType),
                     context.CancellationToken);
-                if (diagnostic != null) context.ReportDiagnostic(diagnostic);
+                if (diagnostic == null) return;
+
+                TelemetryCounts.Record(context.Compilation, diagnostic);
+                context.ReportDiagnostic(diagnostic);
             }
 
             // System.Linq.Enumerable, and extension methods from any other class that take the sequence
@@ -569,7 +575,10 @@ namespace ObjectPoolLinter
                 if (semanticModel == null) return;
 
                 var diagnostic = CreateDiagnostic(node, node.GetLocation(), semanticModel, context.Options, kind, allocation, context.CancellationToken);
-                if (diagnostic != null) context.ReportDiagnostic(diagnostic);
+                if (diagnostic == null) return;
+
+                TelemetryCounts.Record(context.Compilation, diagnostic);
+                context.ReportDiagnostic(diagnostic);
             }
 
             // Null when the kind is switched off or `node` does not run on a hot path. The diagnostic is

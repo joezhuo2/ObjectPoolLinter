@@ -110,6 +110,7 @@ namespace ObjectPoolLinter
                         methodName
                     );
 
+                    TelemetryCounts.Record(context.Compilation, diagnostic);
                     context.ReportDiagnostic(diagnostic);
                 }
             }
@@ -128,6 +129,7 @@ namespace ObjectPoolLinter
                         "Instantiate",
                         methodName);
 
+                    TelemetryCounts.Record(context.Compilation, diagnostic);
                     context.ReportDiagnostic(diagnostic);
                 }
             }

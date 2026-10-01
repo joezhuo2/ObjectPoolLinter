@@ -32,10 +32,12 @@ namespace ObjectPoolLinter
         public override ImmutableArray<string> FixableDiagnosticIds =>
             ImmutableArray.Create(UnityApiAllocationAnalyzer.DiagnosticId);
 
-        // No fix-all: the buffer fix picks a free field name from the document as it is, so two fixes
-        // applied in one batch could pick the same name.
+        // The buffer fix picks a free field name and may append to Awake(), so fix-all applies the fixes one
+        // at a time rather than merging fixes computed against the same document.
+        private static readonly FixAllProvider FixAll = new SequentialFixAllProvider(CreateAction);
+
         /// <inheritdoc/>
-        public override FixAllProvider? GetFixAllProvider() => null;
+        public override FixAllProvider GetFixAllProvider() => FixAll;
 
         /// <inheritdoc/>
         public override async Task RegisterCodeFixesAsync(CodeFixContext context)
@@ -45,11 +47,13 @@ namespace ObjectPoolLinter
             var semanticModel = await document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
             if (root == null || semanticModel == null) return;
 
+            var telemetry = await TelemetryCodeAction.IsEnabledAsync(document, context.CancellationToken).ConfigureAwait(false);
+
             foreach (var diagnostic in context.Diagnostics)
             {
                 var node = root.FindNode(diagnostic.Location.SourceSpan, getInnermostNodeForTie: true);
                 var action = CreateAction(document, root, node, semanticModel, context.CancellationToken);
-                if (action != null) context.RegisterCodeFix(action, diagnostic);
+                if (action != null) context.RegisterCodeFix(TelemetryCodeAction.Wrap(action, telemetry), diagnostic);
             }
         }
 

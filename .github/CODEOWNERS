@@ -1,0 +1,23 @@
+# Code owners: GitHub requests a review from the owners of every file a pull request touches. The last
+# matching pattern wins, so the specific paths below override the catch-all. With branch protection's
+# "Require review from Code Owners" on, an owner's approval is needed to merge.
+#
+# Syntax: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Everything not matched below.
+*                                   @joezhuo2
+
+# The shipped analyzer, code fixes and generator, and the package that ships them.
+/src/                               @joezhuo2
+
+# Build, CI and release: these decide what is built, signed and published.
+/.github/workflows/                 @joezhuo2
+/build/                             @joezhuo2
+/Directory.Build.props              @joezhuo2
+/Directory.Packages.props           @joezhuo2
+/global.json                        @joezhuo2
+/unity/                             @joezhuo2
+
+# Security policy and this file.
+/SECURITY.md                        @joezhuo2
+/.github/CODEOWNERS                 @joezhuo2

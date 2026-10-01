@@ -58,3 +58,11 @@ OPL008 | Performance | Info | Reports `Resources.Load` and Addressables `Load*` 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 OPL009 | Performance | Info | Reports `GetComponent`, `TryGetComponent`, `GetComponentInChildren`/`InParent` on the same object, and `GameObject.Find`, `FindWithTag` and `FindObjectOfType` inside frequently-invoked methods.
+
+## Release 1.9.1
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
+OPL010 | Telemetry | Info | With `object_pool_linter.telemetry = true`, reports once per compilation how many times each ObjectPoolLinter rule fired.

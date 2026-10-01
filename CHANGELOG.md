@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.1] - 2026-09-30
+
+Fix All for every code fix, opt-in local telemetry, a build-time benchmark and a code owners file.
+Without `object_pool_linter.telemetry = true`, builds report exactly what 1.9.0 did.
+
+### Added
+- **Fix All for OPL002 and OPL003.** Every code fix of the three rules now applies across a document,
+  project or solution. The OPL002 and OPL003 fixes add fields and `Awake()` statements, so instead of
+  Roslyn's batch fixer, which merges fixes computed against the same document, their Fix All applies the
+  fixes one at a time, in source order, each to the code the previous one left: two lambdas cached in
+  one class get `_next` and `_next2` and share one `Awake()`, and two buffers in different methods get
+  `_collidersBuffer` and `_collidersBuffer2`. Fix All applies only the fix picked, and documents are
+  fixed one after another, so a fix in one part of a partial class sees fields added to another part.
+  [docs/rules/OPL002.md](docs/rules/OPL002.md#fix-all) has an example.
+- **Opt-in, local-only telemetry.** `object_pool_linter.telemetry = true` in `.editorconfig` turns on:
+  - [OPL010](docs/rules/OPL010.md), an Info diagnostic reported once per compilation with how many
+    times each rule fired, most frequent first (`OPL002: 375, OPL001: 125 (501 source files)`), with
+    the counts also as diagnostic properties for SARIF readers. Counts are taken as the rules report,
+    before `#pragma`, `[SuppressMessage]` and the automatic suppressions.
+  - A count of each code fix applied in the IDE, and each Fix All run, in
+    `LocalApplicationData/ObjectPoolLinter/telemetry.json`. Previewing a fix counts nothing.
+
+  Nothing is sent anywhere, and neither holds file names, paths, symbols, code or anything identifying a
+  person or machine. [docs/telemetry.md](docs/telemetry.md) describes what is collected, where it is
+  kept, and how to share or delete it. The option is off by default; any value other than `true` or
+  `false` is reported as OPL004.
+- **Build-time benchmark.** `benchmarks/ObjectPoolLinter.Benchmarks` (BenchmarkDotNet) compiles a
+  generated Unity-style project with and without the analyzers, and reports each analyzer's own time
+  with `--analyzer-times`. On the machine measured, the analyzers took the compile from 0.23 s to
+  0.54 s for 100 scripts and from 1.05 s to 1.59 s for 500, with OPL001 and OPL002 accounting for most
+  of it. [docs/benchmarks.md](docs/benchmarks.md) has the full results and how to run it. CI builds the
+  project but does not run it.
+- `.github/CODEOWNERS`, so GitHub requests a review from the maintainer on every pull request.
+
+### Changed
+- The README's configuration example, option table and rule list include the telemetry option and
+  OPL010, and the README states the measured build-time cost.
+
 ## [v1.9.0] - 2026-09-30
 
 Documentation and API reference. The analyzers, code fixes, generator and suppressor report exactly
@@ -1593,7 +1631,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.1...HEAD
+[v1.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.0...v1.9.1
 [v1.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.4...v1.9.0
 [v1.8.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.3...v1.8.4
 [v1.8.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.2...v1.8.3

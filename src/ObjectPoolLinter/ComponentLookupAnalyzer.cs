@@ -108,7 +108,9 @@ namespace ObjectPoolLinter
                     return;
 
                 var api = method.ContainingType.Name + "." + method.Name;
-                context.ReportDiagnostic(Diagnostic.Create(Rule, invocation.Syntax.GetLocation(), api, kind, methodName, advice));
+                var diagnostic = Diagnostic.Create(Rule, invocation.Syntax.GetLocation(), api, kind, methodName, advice);
+                TelemetryCounts.Record(context.Compilation, diagnostic);
+                context.ReportDiagnostic(diagnostic);
             }
 
             private (string? Kind, string? Advice) Classify(IInvocationOperation invocation)

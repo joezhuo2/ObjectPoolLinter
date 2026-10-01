@@ -35,10 +35,12 @@ namespace ObjectPoolLinter
         public override ImmutableArray<string> FixableDiagnosticIds =>
             ImmutableArray.Create(HiddenAllocationAnalyzer.DiagnosticId);
 
-        // No fix-all: each fix picks a free field name from the document as it is, so two fixes applied in
-        // one batch could pick the same name.
+        // Each fix picks a free field name and may append to Awake(), so fix-all applies them one at a time
+        // rather than merging fixes computed against the same document.
+        private static readonly FixAllProvider FixAll = new SequentialFixAllProvider(CreateAction);
+
         /// <inheritdoc/>
-        public override FixAllProvider? GetFixAllProvider() => null;
+        public override FixAllProvider GetFixAllProvider() => FixAll;
 
         /// <inheritdoc/>
         public override async Task RegisterCodeFixesAsync(CodeFixContext context)
@@ -48,19 +50,27 @@ namespace ObjectPoolLinter
             var semanticModel = await document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
             if (root == null || semanticModel == null) return;
 
+            var telemetry = await TelemetryCodeAction.IsEnabledAsync(document, context.CancellationToken).ConfigureAwait(false);
+
             foreach (var diagnostic in context.Diagnostics)
             {
                 var node = root.FindNode(diagnostic.Location.SourceSpan, getInnermostNodeForTie: true);
-                var rewrite = CreateRewrite(node, root, semanticModel, context.CancellationToken);
-                if (rewrite == null) continue;
+                var action = CreateAction(document, root, node, semanticModel, context.CancellationToken);
+                if (action == null) continue;
 
-                context.RegisterCodeFix(
-                    CodeAction.Create(
-                        title: rewrite.Title,
-                        createChangedDocument: _ => Task.FromResult(rewrite.Apply(document, root)),
-                        equivalenceKey: rewrite.EquivalenceKey),
-                    diagnostic);
+                context.RegisterCodeFix(TelemetryCodeAction.Wrap(action, telemetry), diagnostic);
             }
+        }
+
+        private static CodeAction? CreateAction(Document document, SyntaxNode root, SyntaxNode node, SemanticModel model, CancellationToken cancellationToken)
+        {
+            var rewrite = CreateRewrite(node, root, model, cancellationToken);
+            if (rewrite == null) return null;
+
+            return CodeAction.Create(
+                title: rewrite.Title,
+                createChangedDocument: _ => Task.FromResult(rewrite.Apply(document, root)),
+                equivalenceKey: rewrite.EquivalenceKey);
         }
 
         private static Rewrite? CreateRewrite(SyntaxNode node, SyntaxNode root, SemanticModel model, CancellationToken cancellationToken)

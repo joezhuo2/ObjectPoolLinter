@@ -24,9 +24,11 @@ namespace ObjectPoolLinter
         public sealed override ImmutableArray<string> FixableDiagnosticIds =>
             ImmutableArray.Create(ObjectPoolAnalyzer.DiagnosticId);
 
+        // The fixes are independent of each other, so Roslyn's batch fixer merges them safely.
+        private static readonly FixAllProvider FixAll = new TelemetryFixAllProvider(WellKnownFixAllProviders.BatchFixer);
+
         /// <inheritdoc/>
-        public sealed override FixAllProvider GetFixAllProvider() =>
-            WellKnownFixAllProviders.BatchFixer;
+        public sealed override FixAllProvider GetFixAllProvider() => FixAll;
 
         /// <inheritdoc/>
         public sealed override async Task RegisterCodeFixesAsync(CodeFixContext context)
@@ -40,16 +42,17 @@ namespace ObjectPoolLinter
             var node = root.FindNode(diagnosticSpan);
 
             var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
+            var telemetry = await TelemetryCodeAction.IsEnabledAsync(context.Document, context.CancellationToken).ConfigureAwait(false);
 
             if (semanticModel != null && node is BaseObjectCreationExpressionSyntax { Initializer: null } objectCreation)
             {
                 if (TryGetPoolName(semanticModel, objectCreation, context.CancellationToken, out _))
                 {
                     context.RegisterCodeFix(
-                        CodeAction.Create(
+                        TelemetryCodeAction.Wrap(CodeAction.Create(
                             title: "Replace with object pool Get()",
                             createChangedDocument: c => ReplaceWithPoolGetAsync(context.Document, objectCreation, c),
-                            equivalenceKey: "ObjectPoolLinterReplaceWithPoolGet"),
+                            equivalenceKey: "ObjectPoolLinterReplaceWithPoolGet"), telemetry),
                         diagnostic);
                 }
                 else if (PoolClassWriter.TryPlan(semanticModel, objectCreation, context.CancellationToken) is { } plan)
@@ -57,10 +60,10 @@ namespace ObjectPoolLinter
                     // No pool exists yet, so the fix writes one beside the class it is used in and
                     // routes this allocation through it. Handing the instance back stays manual.
                     context.RegisterCodeFix(
-                        CodeAction.Create(
+                        TelemetryCodeAction.Wrap(CodeAction.Create(
                             title: "Generate " + plan.PoolName + " and use it here",
                             createChangedDocument: c => GeneratePoolAsync(context.Document, objectCreation, c),
-                            equivalenceKey: "ObjectPoolLinterGeneratePool"),
+                            equivalenceKey: "ObjectPoolLinterGeneratePool"), telemetry),
                         diagnostic);
                 }
             }
@@ -68,18 +71,18 @@ namespace ObjectPoolLinter
             if (semanticModel != null && ArrayPoolRewrite.TryPlan(semanticModel, node, context.CancellationToken) != null)
             {
                 context.RegisterCodeFix(
-                    CodeAction.Create(
+                    TelemetryCodeAction.Wrap(CodeAction.Create(
                         title: "Rent the array from ArrayPool<T>.Shared",
                         createChangedDocument: c => RentFromArrayPoolAsync(context.Document, node, c),
-                        equivalenceKey: "ObjectPoolLinterRentFromArrayPool"),
+                        equivalenceKey: "ObjectPoolLinterRentFromArrayPool"), telemetry),
                     diagnostic);
             }
 
             context.RegisterCodeFix(
-                CodeAction.Create(
+                TelemetryCodeAction.Wrap(CodeAction.Create(
                     title: "Add pooling TODO comment",
                     createChangedDocument: c => AddPoolingCommentAsync(context.Document, node, c),
-                    equivalenceKey: "ObjectPoolLinterAddPoolingComment"),
+                    equivalenceKey: "ObjectPoolLinterAddPoolingComment"), telemetry),
                 diagnostic);
         }
 

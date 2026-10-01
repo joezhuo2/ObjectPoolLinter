@@ -58,6 +58,8 @@ namespace ObjectPoolLinter
 
         internal const string SuppressionsOption = Prefix + "suppressions";
 
+        internal const string TelemetryOption = Prefix + "telemetry";
+
         internal static readonly ImmutableArray<string> KnownOptions = ImmutableArray.Create(
             AdditionalHotMethodsOption,
             ExcludedTypesOption,
@@ -70,7 +72,8 @@ namespace ObjectPoolLinter
             IteratorSeverityOption,
             AsyncSeverityOption,
             EnumeratorSeverityOption,
-            SuppressionsOption);
+            SuppressionsOption,
+            TelemetryOption);
 
         private static readonly ImmutableArray<(AllocationKind Kind, string Option)> SeverityOptions = ImmutableArray.Create(
             (AllocationKind.String, StringSeverityOption),
@@ -164,6 +167,10 @@ namespace ObjectPoolLinter
 
             var suppressions = ParseSuppressions(options, problems);
 
+            if (options.TryGetValue(TelemetryOption, out var telemetry) && !string.IsNullOrWhiteSpace(telemetry) &&
+                !IsBoolean(telemetry.Trim()))
+                problems.Add($"'{telemetry.Trim()}' in '{TelemetryOption}' is not true or false.");
+
             if (additionalHotMethods.Count == 0 && excludedTypes.IsEmpty && excludedTypesRegex == null &&
                 severities.Count == 0 && suppressions == SuppressionKind.All && problems.Count == 0)
                 return Empty;
@@ -233,6 +240,26 @@ namespace ObjectPoolLinter
         {
             return (_suppressions & kind) != 0;
         }
+
+        // Telemetry is on for the whole compilation when any file's options, or the global options, set it
+        // to true. TelemetryAnalyzer reads it once per compilation; see docs/telemetry.md.
+        internal static bool IsTelemetryEnabled(AnalyzerConfigOptionsProvider provider, Compilation compilation)
+        {
+            if (IsTelemetryOn(provider.GlobalOptions)) return true;
+
+            foreach (var tree in compilation.SyntaxTrees)
+            {
+                if (IsTelemetryOn(provider.GetOptions(tree))) return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsTelemetryOn(AnalyzerConfigOptions options) =>
+            options.TryGetValue(TelemetryOption, out var value) && value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsBoolean(string value) =>
+            value.Equals("true", StringComparison.OrdinalIgnoreCase) || value.Equals("false", StringComparison.OrdinalIgnoreCase);
 
         // `all` (the default), `none`, or a list of pattern names. An unusable value leaves every
         // pattern on and is reported as OPL004 rather than silently narrowing the set.

@@ -11,19 +11,21 @@
       Roslyn that Unity 2021.3 (the oldest Unity the package supports) loads analyzers into. An analyzer
       built against a newer Roslyn fails to load there. Raise it only together with the minimum Unity
       version in build/pack-unity.ps1 and docs/unity-package-manager.md.
-    - The tests run on the newer Roslyn that Microsoft.CodeAnalysis.Testing requires. Only the test
-      project gets these versions (the condition below); everything else sees 3.8.0.
+    - The tests run on the newer Roslyn that Microsoft.CodeAnalysis.Testing requires, and the benchmarks
+      on the one BenchmarkDotNet requires, as an IDE or a recent SDK would load the analyzer. Only those
+      projects get these versions (the conditions below); everything else sees 3.8.0.
   -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
     <ShippedRoslynVersion>3.8.0</ShippedRoslynVersion>
     <TestRoslynVersion>4.8.0</TestRoslynVersion>
+    <BenchmarkRoslynVersion>4.14.0</BenchmarkRoslynVersion>
     <TestingLibraryVersion>1.1.2</TestingLibraryVersion>
   </PropertyGroup>
 
   <!-- Shipped assemblies (src/) -->
-  <ItemGroup Condition="'$(MSBuildProjectName)' != 'ObjectPoolLinter.Tests'">
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'ObjectPoolLinter.Tests' and '$(MSBuildProjectName)' != 'ObjectPoolLinter.Benchmarks'">
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(ShippedRoslynVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(ShippedRoslynVersion)" />
   </ItemGroup>
@@ -35,8 +37,16 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(TestRoslynVersion)" />
   </ItemGroup>
 
+  <!-- Benchmarks (benchmarks/ObjectPoolLinter.Benchmarks); BenchmarkDotNet needs Roslyn 4.14 or later -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'ObjectPoolLinter.Benchmarks'">
+    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="$(BenchmarkRoslynVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(BenchmarkRoslynVersion)" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
+
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
 
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="$(TestingLibraryVersion)" />

@@ -87,6 +87,7 @@ file named `.globalconfig` in the project folder; other names are added with
 | `object_pool_linter.async_severity` | Severity | OPL002 | 1.5.5 |
 | `object_pool_linter.enumerator_severity` | Severity | OPL002 | 1.5.6 |
 | `object_pool_linter.suppressions` | Comma-separated pattern names, `all` or `none` | OPL001, OPL002, OPL003, OPL008, OPL009 | 1.5.4 |
+| `object_pool_linter.telemetry` | `true` or `false` (the default) | OPL010 and the code fixes | 1.9.1 |
 | `dotnet_diagnostic.OPL00N.severity` | Severity | The named rule | Standard Roslyn |
 
 A severity is one of `none`, `silent`, `suggestion`, `warning`, `error`, the same words
@@ -304,6 +305,19 @@ object_pool_linter.suppressions = first_frame, editor_only
 Names are case-insensitive, and an unknown one is reported as [OPL004](rules/OPL004.md) and leaves
 every pattern on. What each pattern matches exactly, and what it deliberately does not, is in
 [Automatic suppressions](suppressions.md).
+
+## Telemetry (`telemetry`)
+
+Off unless set to `true`. With it on, [OPL010](rules/OPL010.md) reports once per build how many times
+each rule fired, and the code fixes count the fixes you apply in a local file. Nothing is sent
+anywhere. It is on for a whole project when any file's options, or the global options, turn it on.
+
+```ini
+[*.cs]
+object_pool_linter.telemetry = true
+```
+
+What is collected, where it is kept, and how to remove it: [Telemetry](telemetry.md).
 
 ## Checking your config (OPL004)
 

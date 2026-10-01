@@ -109,7 +109,7 @@ namespace ObjectPoolLinter
                 var target = GetTarget(creation, out var symbol);
                 if (target == Target.Discarded)
                 {
-                    Report(context.ReportDiagnostic, creation, allocator, "in '" + context.ContainingSymbol.Name + "' is never disposed", "Keep it in a variable and call Dispose() on it");
+                    Report(context.ReportDiagnostic, context.Compilation, creation, allocator, "in '" + context.ContainingSymbol.Name + "' is never disposed", "Keep it in a variable and call Dispose() on it");
                     return;
                 }
 
@@ -129,9 +129,9 @@ namespace ObjectPoolLinter
 
                 var name = function is ILocalFunctionOperation localFunction ? localFunction.Symbol.Name : context.ContainingSymbol.Name;
                 if (result == Leak.Never)
-                    Report(context.ReportDiagnostic, creation, allocator, "in '" + name + "' is never disposed", "Call Dispose() on it, or declare it with 'using'");
+                    Report(context.ReportDiagnostic, context.Compilation, creation, allocator, "in '" + name + "' is never disposed", "Call Dispose() on it, or declare it with 'using'");
                 else
-                    Report(context.ReportDiagnostic, creation, allocator, "in '" + name + "' is not disposed on every path out of the method", "Call Dispose() on it before each return, or declare it with 'using'");
+                    Report(context.ReportDiagnostic, context.Compilation, creation, allocator, "in '" + name + "' is not disposed on every path out of the method", "Call Dispose() on it before each return, or declare it with 'using'");
             }
 
             // A container stored in a field or auto-property: some member of the type (OnDestroy,
@@ -171,7 +171,7 @@ namespace ObjectPoolLinter
                     {
                         if (released.ContainsKey(member)) continue;
 
-                        Report(endContext.ReportDiagnostic, creation, allocator,
+                        Report(endContext.ReportDiagnostic, endContext.Compilation, creation, allocator,
                             "into '" + member.Name + "' is never disposed by '" + type.Name + "'",
                             "Call Dispose() on it in OnDestroy, OnDisable or Dispose");
                     }
@@ -372,10 +372,12 @@ namespace ObjectPoolLinter
                 }
             }
 
-            private static void Report(System.Action<Diagnostic> report, IObjectCreationOperation creation, string allocator, string problem, string advice)
+            private static void Report(System.Action<Diagnostic> report, Compilation compilation, IObjectCreationOperation creation, string allocator, string problem, string advice)
             {
                 var type = creation.Type!.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-                report(Diagnostic.Create(Rule, creation.Syntax.GetLocation(), type, allocator, problem, advice));
+                var diagnostic = Diagnostic.Create(Rule, creation.Syntax.GetLocation(), type, allocator, problem, advice);
+                TelemetryCounts.Record(compilation, diagnostic);
+                report(diagnostic);
             }
 
             private static bool HasAttribute(ISymbol symbol, INamedTypeSymbol attributeType)

@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The tests point the local telemetry file at a temporary path. -->
+    <InternalsVisibleTo Include="ObjectPoolLinter.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ObjectPoolLinter\ObjectPoolLinter.csproj" />
   </ItemGroup>
 

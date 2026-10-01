@@ -19,6 +19,8 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
 - **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls, writes the pool class when none exists, rents local arrays from `ArrayPool<T>.Shared` inside a `try`/`finally`, or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
+- **Fix All everywhere**: every code fix of all three rules applies across a document, project or solution in one step
+- **Opt-in, local-only telemetry**: `object_pool_linter.telemetry = true` reports how often each rule fired ([OPL010](docs/rules/OPL010.md)) and counts the code fixes you apply in a file on your machine. Nothing is sent anywhere - see [Telemetry](docs/telemetry.md)
 - **Writes the pool for you**: `[ObjectPool]` on a class generates `{TypeName}Pool` with one `Get()` overload per constructor, plus `Return()`, `Clear()` and partial hooks for resetting a recycled instance - see [Generating pools](docs/source-generator.md)
 - **Targets a specific pool shape**: the replacement fix rewrites `new Enemy(hp)` to `EnemyPool.Get(hp)`, so it needs a type named `{TypeName}Pool` with a static `Get`, already in scope. When nothing answers to that name, a second fix writes the pool first - see [The pool contract](#the-pool-contract)
 - **Burst-aware**: nothing is reported inside a method Burst compiles (a `[BurstCompile]` job's `Execute`, a Burst static method), since Burst rejects managed allocations itself - see [Burst-compiled code](docs/rules/OPL001.md#burst-compiled-code)
@@ -251,7 +253,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.9.0.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.9.1.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -273,11 +275,17 @@ The analyzer runs automatically during build and in IDEs that support Roslyn ana
 Each rule is documented in its own page, which also covers how to change its severity or suppress it:
 [OPL001](docs/rules/OPL001.md), [OPL002](docs/rules/OPL002.md), [OPL003](docs/rules/OPL003.md),
 [OPL004](docs/rules/OPL004.md), [OPL005](docs/rules/OPL005.md), [OPL006](docs/rules/OPL006.md),
-[OPL007](docs/rules/OPL007.md), [OPL008](docs/rules/OPL008.md), [OPL009](docs/rules/OPL009.md).
+[OPL007](docs/rules/OPL007.md), [OPL008](docs/rules/OPL008.md), [OPL009](docs/rules/OPL009.md),
+[OPL010](docs/rules/OPL010.md).
 
 Their boundaries are listed under [Known limitations](#known-limitations); a clean run is not a claim
 that a method allocates nothing. Four shapes never report in the first place, because the analyzer
 suppresses them — see [Automatic suppressions](docs/suppressions.md).
+
+Build time: on a generated Unity-style project, the analyzers took the C# compile step from 0.23 s to
+0.54 s for 100 scripts and from 1.05 s to 1.59 s for 500. That is the compile alone, not Unity's asset
+import or domain reload. The benchmark, the time per analyzer, and how to run it on your machine are
+in [docs/benchmarks.md](docs/benchmarks.md).
 
 Upgrading: what a major version may change, what each 1.x release added that can change a build's
 warnings, and what to change for each major version are in the [migration guide](docs/migration.md).
@@ -303,6 +311,10 @@ object_pool_linter.excluded_types_regex = ^Game\.Debug\.
 object_pool_linter.linq_severity = warning
 object_pool_linter.boxing_severity = warning
 object_pool_linter.params_severity = none
+
+# Opt-in, local-only telemetry: OPL010 summarizes how often each rule fired, and applied code fixes
+# are counted in a file on this machine. Off unless true. See docs/telemetry.md.
+object_pool_linter.telemetry = true
 ```
 
 The hot-method and exclusion options apply to OPL001, OPL002, OPL003, OPL008 and OPL009; the `*_severity`
@@ -349,8 +361,11 @@ initializer by hand.
 
 The TODO-comment fix leaves the diagnostic in place, so you can add the comment first and apply the
 pool rewrite later; the comment stays above the statement. Every fix, OPL002 and OPL003 included,
-writes new lines with the file's own line ending (LF or CRLF). The OPL001 fixes can be applied with
-**Fix All** in a document, project or solution; the OPL002 and OPL003 fixes cannot (see below).
+writes new lines with the file's own line ending (LF or CRLF). Every fix, for all three rules, can be
+applied with **Fix All** in a document, project or solution. The OPL001 fixes are independent of each
+other and are merged in one pass. The OPL002 and OPL003 fixes add fields and `Awake()` statements, so
+Fix All applies them one at a time, in source order, each to the code the previous one left: two
+lambdas cached in the same class get `_next` and `_next2`, and share one `Awake()`.
 
 The pool fixes are also **not** offered for array allocations (`new int[4]`, `new[] { 1, 2 }`).
 Those get the third fix instead, and only where it is safe: a local buffer, declared with its length,
@@ -392,8 +407,9 @@ without changing what the code does; the other shapes are still reported, with n
 The two delegate fixes need a `MonoBehaviour`, because they rely on `Awake()` running before the hot
 method; they add `Awake()` when the class has none. The `StringBuilder` fix still leaves one allocation
 per run, the final `ToString()`, which OPL002 keeps reporting. The LINQ fix hands back the same list on
-every run, so code that keeps the result past the current frame has to copy it. None of the four has
-fix-all support.
+every run, so code that keeps the result past the current frame has to copy it. All four support
+**Fix All**, which applies only the fix you picked: running it on a cached lambda leaves the strings
+and LINQ chains in the same scope alone.
 
 ### OPL003 code fixes
 
@@ -410,7 +426,7 @@ APIs keep the manual fixes listed on that page.
 
 `CompareTag` logs an error for a tag missing from the Tag Manager, where `==` returned `false`. The
 buffer fix hands back the same list on every run, so code that keeps it past the frame has to copy it.
-None of the three has fix-all support.
+All three support **Fix All**.
 
 ## Automatic suppressions
 
