@@ -95,7 +95,7 @@ namespace ObjectPoolLinter
                 if (type.IsValueType && !TryGetBoxingTarget(node, context.SemanticModel, context.CancellationToken, out boxedTo))
                     return;
 
-                if (TryGetHotPathMethod(node, context, out var methodName))
+                if (TryGetHotPathMethod(node, context, out var hotPath))
                 {
                     // Named from the symbol, not the syntax, so `new System.Collections.Generic.List<int>()`,
                     // `new List<int>()` and `new()` all read `new List<int>`, and `new int[10]` reads `new int[]`.
@@ -106,8 +106,9 @@ namespace ObjectPoolLinter
                     var diagnostic = Diagnostic.Create(
                         Rule,
                         node.GetLocation(),
+                        hotPath.Properties,
                         allocation,
-                        methodName
+                        hotPath.MethodName
                     );
 
                     TelemetryCounts.Record(context.Compilation, diagnostic);
@@ -121,13 +122,14 @@ namespace ObjectPoolLinter
 
                 if (!IsInstantiateCall(invocation, context.SemanticModel)) return;
 
-                if (TryGetHotPathMethod(invocation, context, out var methodName))
+                if (TryGetHotPathMethod(invocation, context, out var hotPath))
                 {
                     var diagnostic = Diagnostic.Create(
                         Rule,
                         invocation.GetLocation(),
+                        hotPath.Properties,
                         "Instantiate",
-                        methodName);
+                        hotPath.MethodName);
 
                     TelemetryCounts.Record(context.Compilation, diagnostic);
                     context.ReportDiagnostic(diagnostic);
@@ -172,9 +174,9 @@ namespace ObjectPoolLinter
                        SymbolEqualityComparer.Default.Equals(methodSymbol.ContainingType?.OriginalDefinition, _unityObject);
             }
 
-            private bool TryGetHotPathMethod(SyntaxNode node, SyntaxNodeAnalysisContext context, out string methodName)
+            private bool TryGetHotPathMethod(SyntaxNode node, SyntaxNodeAnalysisContext context, out HotPath hotPath)
             {
-                return _hotPaths.TryGetHotPathMethod(node, context.SemanticModel, context.Options, context.CancellationToken, out methodName);
+                return _hotPaths.TryGetHotPathMethod(node, context.SemanticModel, context.Options, context.CancellationToken, out hotPath);
             }
         }
     }

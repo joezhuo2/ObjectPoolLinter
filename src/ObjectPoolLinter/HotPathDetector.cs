@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.CodeAnalysis;
@@ -11,6 +12,26 @@ using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace ObjectPoolLinter
 {
+    // The hot method a node executes in, and, for a helper the hot flag reached through calls, the
+    // chain of calls from the hot method as a diagnostic property.
+    internal readonly struct HotPath
+    {
+        internal const string CallChainProperty = "CallChain";
+
+        internal HotPath(string methodName, string? callChain)
+        {
+            MethodName = methodName;
+            Properties = callChain == null
+                ? null
+                : ImmutableDictionary<string, string?>.Empty.Add(CallChainProperty, callChain);
+        }
+
+        internal string MethodName { get; }
+
+        // Null for a method that is hot in its own right.
+        internal ImmutableDictionary<string, string?>? Properties { get; }
+    }
+
     // Decides whether a syntax node executes as part of a hot path. Shared by every rule, so OPL001,
     // OPL002 and OPL003 agree on which methods are hot and honour the same .editorconfig options.
     // One instance per compilation.
@@ -46,6 +67,7 @@ namespace ObjectPoolLinter
                 ["OnDrawGizmosSelected"] = NoParameters,
             }.ToImmutableDictionary(System.StringComparer.Ordinal);
 
+        private readonly Compilation _compilation;
         private readonly INamedTypeSymbol _monoBehaviour;
 
         // Null when the compilation does not reference the Burst package.
@@ -55,8 +77,17 @@ namespace ObjectPoolLinter
         private readonly ConcurrentDictionary<SyntaxTree, LinterOptions> _optionsByTree = new();
         private readonly ConcurrentDictionary<string, Regex?> _regexCache = new(System.StringComparer.Ordinal);
 
-        private HotPathDetector(INamedTypeSymbol monoBehaviour, INamedTypeSymbol? burstCompile, INamedTypeSymbol? burstDiscard)
+        // One call graph per compilation, shared by every rule's detector, built the first time a node
+        // sits in a method that is not hot in its own right.
+        private static readonly ConditionalWeakTable<Compilation, CallGraphSlot> CallGraphs = new();
+
+        private HotPathDetector(
+            Compilation compilation,
+            INamedTypeSymbol monoBehaviour,
+            INamedTypeSymbol? burstCompile,
+            INamedTypeSymbol? burstDiscard)
         {
+            _compilation = compilation;
             _monoBehaviour = monoBehaviour;
             _burstCompile = burstCompile;
             _burstDiscard = burstDiscard;
@@ -69,6 +100,7 @@ namespace ObjectPoolLinter
             if (monoBehaviour == null) return null;
 
             return new HotPathDetector(
+                compilation,
                 monoBehaviour,
                 compilation.GetTypeByMetadataName(BurstCompileMetadataName),
                 compilation.GetTypeByMetadataName(BurstDiscardMetadataName));
@@ -79,9 +111,9 @@ namespace ObjectPoolLinter
             SemanticModel semanticModel,
             AnalyzerOptions analyzerOptions,
             CancellationToken cancellationToken,
-            out string methodName)
+            out HotPath hotPath)
         {
-            methodName = string.Empty;
+            hotPath = default;
 
             var method = GetExecutingMethod(node, semanticModel);
             if (method == null) return false;
@@ -90,15 +122,34 @@ namespace ObjectPoolLinter
             if (methodSymbol?.ContainingType == null) return false;
 
             var options = GetOptions(node.SyntaxTree, analyzerOptions);
+            if (IsHotRoot(methodSymbol, options))
+            {
+                hotPath = new HotPath(methodSymbol.Name, callChain: null);
+                return true;
+            }
+
             if (options.IsExcludedType(methodSymbol.ContainingType)) return false;
 
-            if (!options.IsAdditionalHotMethod(methodSymbol) && !IsUnityMessage(methodSymbol)) return false;
+            var callChain = GetCallGraph(analyzerOptions, cancellationToken).GetCallChain(methodSymbol);
+            if (callChain == null) return false;
 
-            if (IsBurstCompiled(methodSymbol)) return false;
-
-            methodName = methodSymbol.Name;
+            hotPath = new HotPath(methodSymbol.Name, callChain);
             return true;
         }
+
+        // A method that is hot in its own right: a Unity message or an additional_hot_methods entry, not
+        // in an excluded type and not Burst-compiled. The call graph starts from these.
+        internal bool IsHotRoot(IMethodSymbol method, LinterOptions options)
+        {
+            if (method.ContainingType == null || options.IsExcludedType(method.ContainingType)) return false;
+            if (!options.IsAdditionalHotMethod(method) && !IsUnityMessage(method)) return false;
+
+            return !IsBurstCompiled(method);
+        }
+
+        // Whether a method with this name could be a hot root, judged from the name alone.
+        internal static bool MayBeHotRoot(string methodName, LinterOptions options) =>
+            HotPathMessageSignatures.ContainsKey(methodName) || options.MayBeAdditionalHotMethod(methodName);
 
         // Matches the namespace by its full name, so a user's own `Game.UnityEngine` does not count.
         internal static bool IsInUnityEngineNamespace(ISymbol symbol)
@@ -117,6 +168,31 @@ namespace ObjectPoolLinter
             return _optionsByTree.GetOrAdd(
                 tree,
                 t => LinterOptions.Parse(analyzerOptions.AnalyzerConfigOptionsProvider.GetOptions(t), _regexCache));
+        }
+
+        // Built once, under a lock, by the first analyzer thread that needs it. A cancelled build is not
+        // kept, so the next caller builds it again.
+        private HotPathCallGraph GetCallGraph(AnalyzerOptions analyzerOptions, CancellationToken cancellationToken)
+        {
+            var slot = CallGraphs.GetValue(_compilation, _ => new CallGraphSlot());
+
+            var callGraph = Volatile.Read(ref slot.CallGraph);
+            if (callGraph != null) return callGraph;
+
+            lock (slot)
+            {
+                callGraph = slot.CallGraph;
+                if (callGraph != null) return callGraph;
+
+                callGraph = HotPathCallGraph.Build(_compilation, this, analyzerOptions, cancellationToken);
+                Volatile.Write(ref slot.CallGraph, callGraph);
+                return callGraph;
+            }
+        }
+
+        private sealed class CallGraphSlot
+        {
+            internal HotPathCallGraph? CallGraph;
         }
 
         private bool IsUnityMessage(IMethodSymbol methodSymbol)
@@ -147,7 +223,7 @@ namespace ObjectPoolLinter
         // compile time, so nothing inside can put garbage on the heap. An instance method of a class,
         // such as a MonoBehaviour's Update, always runs as managed code whatever it is marked with, and so
         // does a [BurstDiscard] method.
-        private bool IsBurstCompiled(IMethodSymbol method)
+        internal bool IsBurstCompiled(IMethodSymbol method)
         {
             if (_burstCompile == null) return false;
             if (!method.IsStatic && method.ContainingType.TypeKind != TypeKind.Struct) return false;
@@ -175,7 +251,7 @@ namespace ObjectPoolLinter
             return false;
         }
 
-        private static MethodDeclarationSyntax? GetExecutingMethod(SyntaxNode node, SemanticModel semanticModel)
+        internal static MethodDeclarationSyntax? GetExecutingMethod(SyntaxNode node, SemanticModel semanticModel)
         {
             for (var current = node.Parent; current != null; current = current.Parent)
             {

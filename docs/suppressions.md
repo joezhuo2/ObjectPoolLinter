@@ -155,8 +155,10 @@ suppressed by a pragma stays suppressed.
 ## What is deliberately not suppressed
 
 - **A guard the suppressor cannot see through.** `if (ShouldWarmUp())`, a latch behind a property, a
-  `frameCount` check in a helper method: the suppressor is syntactic and local, it does no call-graph
-  analysis.
+  `frameCount` check in a helper method: the suppressor is syntactic and local. The other way round
+  works since 1.9.2: a call made behind one of these guards is not followed by the
+  [call graph](configuration.md#helpers-called-from-a-hot-method-max_call_depth), so a helper
+  `Update` calls only on the first frame or only in the editor is not reported.
 - **`Start`, `Awake` and friends.** Nothing is needed there - the rules never look at them.
 - **An allocation on a cold branch inside a hot method** (`if (hp <= 0)`), which is rare per frame
   but not provably once.

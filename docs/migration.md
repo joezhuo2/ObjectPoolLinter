@@ -60,6 +60,7 @@ rules, detections or options that can change what a build reports:
 | 1.6.1 | New rule [OPL009](rules/OPL009.md), component lookups in hot paths | Info | `dotnet_diagnostic.OPL009.severity = none` |
 | 1.6.1 | OPL003 reports more members that build a new string or object (`Application.dataPath`, `Scene.name`, `NavMeshAgent.path`, `JsonUtility`, ...) | **Warning** | `#pragma` or `[SuppressMessage]` per site, or the rule's severity |
 | 1.9.1 | New rule [OPL010](rules/OPL010.md), the telemetry summary, and the `telemetry` option; reported only with `object_pool_linter.telemetry = true`, so a build without the option reports nothing new | Info | Leave the option off, or `dotnet_diagnostic.OPL010.severity = none` |
+| 1.9.2 | OPL001, OPL002, OPL003, OPL008 and OPL009 report in helper methods a hot method calls, up to three calls deep, and the new `max_call_depth` option; the message names the helper | The rule's own | `object_pool_linter.max_call_depth = 0` |
 
 `AnalyzerReleases.Shipped.md` in `src/ObjectPoolLinter/` is the authoritative record of when each rule
 shipped and at which severity. [CHANGELOG.md](../CHANGELOG.md) lists every detection added to an

@@ -46,6 +46,11 @@ namespace ObjectPoolLinter
         internal const string AdditionalHotMethodsOption = Prefix + "additional_hot_methods";
         internal const string ExcludedTypesOption = Prefix + "excluded_types";
         internal const string ExcludedTypesRegexOption = Prefix + "excluded_types_regex";
+        internal const string MaxCallDepthOption = Prefix + "max_call_depth";
+
+        // How many calls away from a hot method a helper may be and still count as hot. 0 turns the
+        // call-graph propagation off.
+        internal const int DefaultMaxCallDepth = 3;
 
         internal const string StringSeverityOption = Prefix + "string_severity";
         internal const string DelegateSeverityOption = Prefix + "delegate_severity";
@@ -64,6 +69,7 @@ namespace ObjectPoolLinter
             AdditionalHotMethodsOption,
             ExcludedTypesOption,
             ExcludedTypesRegexOption,
+            MaxCallDepthOption,
             StringSeverityOption,
             DelegateSeverityOption,
             ParamsSeverityOption,
@@ -98,6 +104,7 @@ namespace ObjectPoolLinter
             ImmutableArray<HotMethodEntry>.Empty,
             ImmutableArray<string>.Empty,
             null,
+            DefaultMaxCallDepth,
             ImmutableDictionary<AllocationKind, ReportDiagnostic>.Empty,
             SuppressionKind.All,
             ImmutableArray<string>.Empty);
@@ -112,6 +119,7 @@ namespace ObjectPoolLinter
             ImmutableArray<HotMethodEntry> additionalHotMethods,
             ImmutableArray<string> excludedTypes,
             Regex? excludedTypesRegex,
+            int maxCallDepth,
             ImmutableDictionary<AllocationKind, ReportDiagnostic> severities,
             SuppressionKind suppressions,
             ImmutableArray<string> problems)
@@ -119,6 +127,7 @@ namespace ObjectPoolLinter
             _additionalHotMethods = additionalHotMethods;
             _excludedTypes = excludedTypes;
             _excludedTypesRegex = excludedTypesRegex;
+            MaxCallDepth = maxCallDepth;
             _severities = severities;
             _suppressions = suppressions;
             Problems = problems;
@@ -127,6 +136,9 @@ namespace ObjectPoolLinter
         // Values that could not be used, as messages for OPL004. Unrecognized option names are found
         // separately, by FindUnrecognizedOptions.
         internal ImmutableArray<string> Problems { get; }
+
+        // How many calls deep the hot flag propagates from a hot method declared in this file.
+        internal int MaxCallDepth { get; }
 
         // `regexCache` holds the patterns already compiled for this compilation, so files sharing an
         // .editorconfig share one Regex. A null value means the pattern did not compile.
@@ -154,6 +166,16 @@ namespace ObjectPoolLinter
                     problems.Add($"'{pattern}' in '{ExcludedTypesRegexOption}' is not a valid regular expression.");
             }
 
+            var maxCallDepth = DefaultMaxCallDepth;
+            if (options.TryGetValue(MaxCallDepthOption, out var depth) && !string.IsNullOrWhiteSpace(depth))
+            {
+                if (int.TryParse(depth.Trim(), System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out var parsedDepth))
+                    maxCallDepth = parsedDepth;
+                else
+                    problems.Add($"'{depth.Trim()}' in '{MaxCallDepthOption}' is not a whole number of 0 or more.");
+            }
+
             var severities = ImmutableDictionary.CreateBuilder<AllocationKind, ReportDiagnostic>();
             foreach (var (kind, option) in SeverityOptions)
             {
@@ -172,13 +194,14 @@ namespace ObjectPoolLinter
                 problems.Add($"'{telemetry.Trim()}' in '{TelemetryOption}' is not true or false.");
 
             if (additionalHotMethods.Count == 0 && excludedTypes.IsEmpty && excludedTypesRegex == null &&
-                severities.Count == 0 && suppressions == SuppressionKind.All && problems.Count == 0)
+                maxCallDepth == DefaultMaxCallDepth && severities.Count == 0 && suppressions == SuppressionKind.All && problems.Count == 0)
                 return Empty;
 
             return new LinterOptions(
                 additionalHotMethods.ToImmutable(),
                 excludedTypes,
                 excludedTypesRegex,
+                maxCallDepth,
                 severities.ToImmutable(),
                 suppressions,
                 problems.ToImmutable());
@@ -224,6 +247,18 @@ namespace ObjectPoolLinter
             foreach (var entry in _additionalHotMethods)
             {
                 if (entry.Matches(method)) return true;
+            }
+
+            return false;
+        }
+
+        // A cheap syntactic pre-filter for the call graph: whether any additional_hot_methods entry could
+        // match a method with this name.
+        internal bool MayBeAdditionalHotMethod(string methodName)
+        {
+            foreach (var entry in _additionalHotMethods)
+            {
+                if (entry.MethodName.Equals(methodName, StringComparison.Ordinal)) return true;
             }
 
             return false;
@@ -497,6 +532,8 @@ namespace ObjectPoolLinter
                 _methodName = methodName;
                 _parameters = parameters;
             }
+
+            internal string MethodName => _methodName;
 
             internal static bool TryParse(string entry, out HotMethodEntry? parsed, out string error)
             {

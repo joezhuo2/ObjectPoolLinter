@@ -9,6 +9,7 @@ lines in the right file and the next build, or the IDE's next analysis pass, pic
 - [Option reference](#option-reference)
 - [Hot methods](#hot-methods-additional_hot_methods)
 - [Excluded types](#excluded-types-excluded_types-and-excluded_types_regex)
+- [Helpers called from a hot method](#helpers-called-from-a-hot-method-max_call_depth)
 - [Generated code](#generated-code)
 - [Rule severity](#rule-severity)
 - [Per-kind OPL002 severity](#per-kind-opl002-severity)
@@ -32,6 +33,9 @@ lines in the right file and the next build, or the IDE's next analysis pass, pic
    # Types whose methods are never reported.
    object_pool_linter.excluded_types = LoadingScreen, Game.UI.CreditsRoll
    object_pool_linter.excluded_types_regex = ^Game\.(Debug|Editor)\.
+
+   # How many calls deep a helper called from a hot method is still checked (0 turns it off).
+   object_pool_linter.max_call_depth = 3
 
    # Rule severities: none | silent | suggestion | warning | error
    dotnet_diagnostic.OPL001.severity = warning
@@ -78,6 +82,7 @@ file named `.globalconfig` in the project folder; other names are added with
 | `object_pool_linter.additional_hot_methods` | Comma-separated method entries | OPL001, OPL002, OPL003, OPL008, OPL009 | 1.2.0; parameter lists in 1.5.2 |
 | `object_pool_linter.excluded_types` | Comma-separated type names | OPL001, OPL002, OPL003, OPL008, OPL009 | 1.2.0 |
 | `object_pool_linter.excluded_types_regex` | One .NET regular expression | OPL001, OPL002, OPL003, OPL008, OPL009 | 1.5.2 |
+| `object_pool_linter.max_call_depth` | A whole number, 0 or more; 3 by default | OPL001, OPL002, OPL003, OPL008, OPL009 | 1.9.2 |
 | `object_pool_linter.string_severity` | Severity | OPL002 | 1.5.2 |
 | `object_pool_linter.delegate_severity` | Severity | OPL002 | 1.5.2 |
 | `object_pool_linter.params_severity` | Severity | OPL002 | 1.5.2 |
@@ -185,6 +190,64 @@ object_pool_linter.excluded_types_regex = ^Game\.(Debug|Editor)\.|Gizmo$
 Both options can be used together; a type listed in either is excluded. Exclusions apply to the type
 the method is declared on. Derived types are still analyzed; list them too, or use a regex that
 matches them.
+
+An excluded type also stops the [call graph](#helpers-called-from-a-hot-method-max_call_depth): its
+methods are not reported when a hot method calls them, and the calls they make are not followed.
+
+## Helpers called from a hot method (`max_call_depth`)
+
+Since 1.9.2, a method a hot method calls is checked too, and so is what that method calls, up to
+`max_call_depth` calls away from the hot method. With the default of 3:
+
+```csharp
+void Update() { Spawn(); }              // hot: a Unity message
+void Spawn()  { Place(); }              // 1 call away: checked
+void Place()  { Route(); }              // 2 calls away: checked
+void Route()  { Score(); }              // 3 calls away: checked
+void Score()  { var s = new List<int>(); } // 4 calls away: not checked
+```
+
+```ini
+[*.cs]
+# Follow calls one level only.
+object_pool_linter.max_call_depth = 1
+
+# Report only what is written in the hot method itself, as before 1.9.2.
+object_pool_linter.max_call_depth = 0
+```
+
+The diagnostic is reported in the helper, at the allocation, and names the helper as the
+frequently-called method: `'new List<int>' allocates inside the frequently-called method 'Place'`. Its
+`CallChain` property (shown in SARIF output) holds the path the hot flag took,
+`Enemy.Update -> Enemy.Spawn -> Enemy.Place`. A helper reached from several hot methods is reported once.
+
+What the call graph follows:
+
+- Calls in the method's own body, including in a lambda invoked in place and in a local function the
+  body calls. A lambda handed to something else is not followed, the same as for an allocation.
+- Calls to methods declared in the project, in any file and any class, static or instance, generic or
+  not, extension methods included.
+- A call to a virtual, abstract or interface method goes to every override or implementation in the
+  project, since any of them may run. `base.Tick()` goes to the base method only.
+- Recursion: each method is visited once per depth, so a cycle ends.
+
+What it does not follow:
+
+- Calls behind a guard the [automatic suppressions](#automatic-suppressions-suppressions) know: inside
+  `#if UNITY_EDITOR`, under `Time.frameCount == 0`, or under a static `bool` latch the branch sets.
+  Switching a pattern off in `suppressions` makes the graph follow those calls too.
+- Calls OPL002 already reports at the call: an iterator, whose body runs when it is enumerated, and a
+  LINQ-style extension method on `IEnumerable<T>`. An `async` method's body is followed; the state
+  machine is reported at the call and the allocations in the body where they are.
+- Methods of a type whose name ends in `Pool` (`BulletPool.Get`): a pool allocates only when it runs
+  empty, which is the point of having one.
+- Methods of an excluded type, Burst-compiled methods, constructors, property accessors, operators and
+  anything in a referenced assembly.
+- Calls through a delegate, an event or reflection.
+
+The depth is read from the file that declares the hot method, so a folder's `.editorconfig` can follow
+calls further for its own hot methods. The graph is built once per compilation from the hot methods
+outward, so its cost grows with the code they reach rather than with the project.
 
 ## Generated code
 

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.2] - 2026-10-02
+
+Call-graph analysis: the hot flag now follows calls, so an allocation in a helper that `Update` calls
+is reported. This can add warnings to a build that 1.9.1 left clean; `object_pool_linter.max_call_depth = 0`
+restores the 1.9.1 behaviour.
+
+### Added
+- **Hot-path propagation through calls (F36).** A method a hot method calls is checked as if it were
+  hot, and so is what it calls, up to `object_pool_linter.max_call_depth` calls away (3 by default).
+  OPL001, OPL002, OPL003, OPL008 and OPL009 all use it. The diagnostic is reported at the allocation in
+  the helper and names the helper (`'new List<int>' allocates inside the frequently-called method
+  'Spawn'`); a new `CallChain` diagnostic property holds the path the flag took, such as
+  `Enemy.Update -> Enemy.Spawn -> PathFinder.Build`, for SARIF readers.
+  - Calls to virtual and abstract methods are followed into every override in the project, and calls
+    to interface methods into every implementation, generic interfaces and explicit implementations
+    included. `base.M()` goes to the base method only.
+  - Recursion and cycles end: a method is walked again only when it is reached with more depth left.
+  - Generic methods, extension methods, partial methods, calls in lambdas invoked in place and in
+    local functions the body calls are followed; a lambda handed elsewhere, a delegate or event
+    invocation, constructors, property accessors and code in referenced assemblies are not.
+  - Calls behind the guards the automatic suppressions recognise (`#if UNITY_EDITOR`,
+    `Time.frameCount == 0`, a static `bool` latch) are not followed, as switched on by
+    `object_pool_linter.suppressions`.
+  - Calls OPL002 already reports as the allocation are not followed, so nothing is reported twice: an
+    iterator (its body runs when enumerated) and a LINQ-style extension on `IEnumerable<T>`. Nor are
+    methods of a type whose name ends in `Pool`, which allocate only when the pool is empty, of an
+    excluded type, or that Burst compiles.
+  - The graph is built once per compilation and shared by every rule, walking outward from the hot
+    methods in parallel and binding a call only when a method in the project has the name it calls.
+- **`object_pool_linter.max_call_depth`**, a whole number of 0 or more, read from the file that declares
+  the hot method. 0 turns propagation off. Any other value is reported as OPL004.
+- `tests/ObjectPoolLinter.Tests/CallGraphTests.cs` (T101): depth limits, recursion, virtual, interface
+  and `base` calls, cross-file helpers, additional hot methods, guarded calls, exclusions, pools,
+  state machines, OPL002 and OPL003 in helpers, the `CallChain` property, and invalid option values.
+- The sample has a helper called from `FixedUpdate` (reported) and one called from `Start` (not), and
+  `build/verify-sample.ps1` expects the new warning.
+
+### Changed
+- OPL002 no longer reports the state machine at the declaration of an iterator or `async` helper
+  reached through a call; it is reported at the call, as before.
+- [docs/configuration.md](docs/configuration.md#helpers-called-from-a-hot-method-max_call_depth)
+  documents the option and what is and is not followed; the README, the OPL001, OPL002, OPL003,
+  OPL008 and OPL009 rule pages, [docs/suppressions.md](docs/suppressions.md) and the
+  [migration guide](docs/migration.md) are updated to match.
+- [docs/benchmarks.md](docs/benchmarks.md#the-call-graph-192) has before and after numbers. On the
+  measured machine the 500-script compile with the analyzers took 2.13 s with 1.9.2 against 2.25 s
+  with 1.9.1, inside the run-to-run noise; the 100-script compile took 0.86 s against 0.58 s.
+
 ## [v1.9.1] - 2026-09-30
 
 Fix All for every code fix, opt-in local telemetry, a build-time benchmark and a code owners file.
@@ -1631,7 +1679,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.2...HEAD
+[v1.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.1...v1.9.2
 [v1.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.0...v1.9.1
 [v1.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.4...v1.9.0
 [v1.8.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.3...v1.8.4

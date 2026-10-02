@@ -35,6 +35,7 @@ $expected = @(
     'OPL001: Instantiate in Update'
     'OPL001: new Vector3 boxed to object in Update'
     'OPL001: new int[] in FixedUpdate'
+    'OPL001: new List<Vector3> in ApplyForces' # reached through the call graph from FixedUpdate
     'OPL001: new List<float> in Tick'      # from samples/SampleUnityCode/.editorconfig
     'OPL002: string interpolation in Update' # raised to a warning in .editorconfig
     'OPL002: iterator state machine for Spawn() in Update'

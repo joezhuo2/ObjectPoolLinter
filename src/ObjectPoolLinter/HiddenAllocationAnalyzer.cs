@@ -309,6 +309,10 @@ namespace ObjectPoolLinter
                     context.CancellationToken);
                 if (diagnostic == null) return;
 
+                // A helper the hot flag reached through a call already has its state machine reported at
+                // that call, in the caller.
+                if (diagnostic.Properties.ContainsKey(HotPath.CallChainProperty)) return;
+
                 TelemetryCounts.Record(context.Compilation, diagnostic);
                 context.ReportDiagnostic(diagnostic);
             }
@@ -595,10 +599,11 @@ namespace ObjectPoolLinter
                 var severity = _hotPaths.GetOptions(node.SyntaxTree, options).GetSeverity(kind);
                 if (severity == ReportDiagnostic.Suppress) return null;
 
-                if (!_hotPaths.TryGetHotPathMethod(node, semanticModel, options, cancellationToken, out var methodName))
+                if (!_hotPaths.TryGetHotPathMethod(node, semanticModel, options, cancellationToken, out var hotPath))
                     return null;
 
-                var properties = ImmutableDictionary<string, string?>.Empty.Add(AllocationKindProperty, KindNames[(int)kind]);
+                var properties = (hotPath.Properties ?? ImmutableDictionary<string, string?>.Empty)
+                    .Add(AllocationKindProperty, KindNames[(int)kind]);
                 var effectiveSeverity = severity switch
                 {
                     ReportDiagnostic.Error => DiagnosticSeverity.Error,
@@ -609,7 +614,7 @@ namespace ObjectPoolLinter
                 };
 
                 return Diagnostic.Create(
-                    Rule, location, effectiveSeverity, additionalLocations: null, properties, allocation, methodName);
+                    Rule, location, effectiveSeverity, additionalLocations: null, properties, allocation, hotPath.MethodName);
             }
         }
     }

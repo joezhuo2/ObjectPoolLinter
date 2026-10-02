@@ -99,6 +99,19 @@ namespace ObjectPoolLinter
             return builder.ToImmutable();
         }
 
+        // A call the hot path does not make every frame, so the call graph does not follow it: the same
+        // guards the suppressor honours, as switched on for the file the call is in. Assigning the
+        // result to a field still makes the call, so the cached-field pattern does not count here.
+        internal static bool IsGuardedCall(SyntaxNode call, SemanticModel semanticModel, LinterOptions options, CancellationToken cancellationToken)
+        {
+            foreach (var kind in new[] { SuppressionKind.EditorOnly, SuppressionKind.FirstFrame, SuppressionKind.StaticLatch })
+            {
+                if (options.IsSuppressionEnabled(kind) && Matches(kind, call, semanticModel, cancellationToken)) return true;
+            }
+
+            return false;
+        }
+
         private static bool Matches(SuppressionKind kind, SyntaxNode node, SemanticModel? semanticModel, CancellationToken cancellationToken)
         {
             switch (kind)

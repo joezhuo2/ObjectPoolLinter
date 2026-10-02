@@ -17,7 +17,8 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
   | [OPL009](docs/rules/OPL009.md) | Lookups that belong in `Awake` or `Start`: `GetComponent<T>()`, `TryGetComponent`, `GetComponentInChildren`/`InParent` on the same object, and `GameObject.Find`, `FindWithTag` and `FindObjectOfType` | Info |
 
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
-- **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
+- **Follows calls**: a helper a hot method calls is checked too, and what it calls, up to three calls deep by default, through virtual and interface calls, with the path in the diagnostic's `CallChain` property - see [Helpers called from a hot method](docs/configuration.md#helpers-called-from-a-hot-method-max_call_depth)
+- **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, set how deep calls are followed, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
 - **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls, writes the pool class when none exists, rents local arrays from `ArrayPool<T>.Shared` inside a `try`/`finally`, or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
 - **Fix All everywhere**: every code fix of all three rules applies across a document, project or solution in one step
 - **Opt-in, local-only telemetry**: `object_pool_linter.telemetry = true` reports how often each rule fired ([OPL010](docs/rules/OPL010.md)) and counts the code fixes you apply in a file on your machine. Nothing is sent anywhere - see [Telemetry](docs/telemetry.md)
@@ -26,8 +27,8 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 - **Burst-aware**: nothing is reported inside a method Burst compiles (a `[BurstCompile]` job's `Execute`, a Burst static method), since Burst rejects managed allocations itself - see [Burst-compiled code](docs/rules/OPL001.md#burst-compiled-code)
 - **Quiet where it should be**: allocations behind a `Time.frameCount == 0` guard, inside `#if UNITY_EDITOR`, behind a static `bool` latch, or assigned straight into a field are suppressed automatically, and each pattern can be switched off - see [Automatic suppressions](#automatic-suppressions)
 
-What the rules deliberately do not cover — call-graph analysis, allocations the analyzer cannot see
-statically, and the allocation shapes with no replacement fix — is listed under
+What the rules deliberately do not cover — calls past the configured depth or out of the project,
+allocations the analyzer cannot see statically, and the allocation shapes with no replacement fix — is listed under
 [Known limitations](#known-limitations).
 
 ## Requirements
@@ -253,7 +254,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.9.1.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.9.2.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -306,6 +307,9 @@ object_pool_linter.additional_hot_methods = Tick(float), Simulate, OnPreCull, En
 object_pool_linter.excluded_types = LoadingScreen, Game.Editor.GizmoDrawer
 object_pool_linter.excluded_types_regex = ^Game\.Debug\.
 
+# Also check helpers a hot method calls, this many calls deep (3 by default; 0 turns it off).
+object_pool_linter.max_call_depth = 3
+
 # OPL002 severity per kind of allocation: string, delegate, params, linq, boxing, iterator, async,
 # enumerator.
 object_pool_linter.linq_severity = warning
@@ -317,7 +321,7 @@ object_pool_linter.params_severity = none
 object_pool_linter.telemetry = true
 ```
 
-The hot-method and exclusion options apply to OPL001, OPL002, OPL003, OPL008 and OPL009; the `*_severity`
+The hot-method, exclusion and call-depth options apply to OPL001, OPL002, OPL003, OPL008 and OPL009; the `*_severity`
 options to OPL002 only, and only while `dotnet_diagnostic.OPL002.severity` is not set. Names are case-sensitive, and an
 exclusion does not extend to derived types. A misspelled option or an unusable value is reported as
 [OPL004](docs/rules/OPL004.md) rather than silently ignored.
@@ -582,10 +586,14 @@ The rules are deliberately narrow: they report allocations they can see in a hot
 offers a fix only when that fix cannot change behaviour. The gaps below are known and intentional for
 this version, not bugs.
 
-**Only allocations written directly in the message body are reported.** There is no call-graph
-analysis, so `void Update() { Spawn(); }` is silent no matter what `Spawn()` allocates. The one
-exception is a call to an iterator or `async` method, which OPL002 reports because the call itself
-creates the state machine; what the method allocates in its own body is still not followed. An allocation
+**Calls are followed only so far.** Since 1.9.2, `void Update() { Spawn(); }` reports what `Spawn()`
+allocates, and what the methods it calls allocate, up to `max_call_depth` calls away (3 by default).
+Past that depth, into a referenced assembly, through a delegate or event, into a constructor or
+property accessor, into an iterator or LINQ-style extension (whose call OPL002 reports instead), into
+a type named `...Pool`, or behind a first-frame, editor-only or static-latch guard, nothing is
+followed - see [Helpers called from a hot method](docs/configuration.md#helpers-called-from-a-hot-method-max_call_depth). A virtual or interface call is
+followed into every override and implementation in the project, including ones that never run at
+that call site. An allocation
 inside a lambda or an anonymous method is attributed to whoever invokes the delegate, not to the
 message, so it is reported only when the lambda is invoked in place; a local function is reported
 only when the declaring body actually calls it. Converting either to a delegate — registering it as a

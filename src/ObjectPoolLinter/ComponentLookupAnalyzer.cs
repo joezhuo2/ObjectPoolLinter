@@ -104,11 +104,11 @@ namespace ObjectPoolLinter
                 var semanticModel = invocation.SemanticModel;
                 if (semanticModel == null) return;
 
-                if (!_hotPaths.TryGetHotPathMethod(invocation.Syntax, semanticModel, context.Options, context.CancellationToken, out var methodName))
+                if (!_hotPaths.TryGetHotPathMethod(invocation.Syntax, semanticModel, context.Options, context.CancellationToken, out var hotPath))
                     return;
 
                 var api = method.ContainingType.Name + "." + method.Name;
-                var diagnostic = Diagnostic.Create(Rule, invocation.Syntax.GetLocation(), api, kind, methodName, advice);
+                var diagnostic = Diagnostic.Create(Rule, invocation.Syntax.GetLocation(), hotPath.Properties, api, kind, hotPath.MethodName, advice);
                 TelemetryCounts.Record(context.Compilation, diagnostic);
                 context.ReportDiagnostic(diagnostic);
             }

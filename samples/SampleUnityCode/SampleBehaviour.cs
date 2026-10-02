@@ -35,12 +35,28 @@ public class PlayerBehaviour : MonoBehaviour
     {
         // Warning: array allocated in FixedUpdate
         var arr = new int[10];
+
+        ApplyForces();
+    }
+
+    // Hot through the call graph (1.9.2): FixedUpdate calls it, so it runs every physics step too.
+    // Warning: List<Vector3> allocated in ApplyForces
+    void ApplyForces()
+    {
+        var forces = new System.Collections.Generic.List<Vector3>();
     }
 
     // NOT a hot path - should NOT warn
     void Start()
     {
         var list = new System.Collections.Generic.List<int>();
+        LoadLevel();
+    }
+
+    // Called only from Start - should NOT warn
+    void LoadLevel()
+    {
+        var rooms = new System.Collections.Generic.List<int>();
     }
 
     // NOT a hot path - Unity never calls a method named Update2, so nothing in it is reported, even a

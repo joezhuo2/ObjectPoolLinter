@@ -64,6 +64,27 @@ OPL001 and OPL002 account for nearly all of it: they look at every object creati
 lambda and invocation in the project, where the other rules match a handful of named APIs first and
 look further only on a match. They are the place to start when the overhead needs to come down.
 
+### The call graph (1.9.2)
+
+1.9.2 builds a call graph once per compilation so that helpers called from a hot method are checked
+([max_call_depth](configuration.md#helpers-called-from-a-hot-method-max_call_depth)). Measured on the
+same machine, 1.9.2 and 1.9.1 one after the other, mean of 10 runs:
+
+| Scripts | 1.9.1 | 1.9.2 | Ratio to compiler only, 1.9.1 | Ratio to compiler only, 1.9.2 |
+| ---: | ---: | ---: | ---: | ---: |
+| 100 | 585 ms | 863 ms | 2.28 | 2.63 |
+| 500 | 2,252 ms | 2,133 ms | 2.42 | 2.05 |
+
+The 500-script difference is inside the noise (a standard deviation of 228 ms on the 1.9.1 run); the
+100-script run is slower, though its compiler-only baseline moved by as much between the two runs.
+Allocations did not change measurably (449 MB and 452 MB at 500 scripts).
+
+`--analyzer-times` moved more: OPL002 from 2.4 s to 4.6 s, OPL009 from 0.2 s to 1.6 s and OPL001 from
+4.6 s to 4.9 s at 500 scripts. Those times are summed over threads, and the first rule to ask for the
+graph builds it while the others wait, so the waiting is counted once per waiting thread. The graph is
+built in parallel and binds a call only when a method in the project has the name it calls, which keeps
+the wall-clock cost small. `object_pool_linter.max_call_depth = 0` skips the walk.
+
 ## Running it
 
 From the repository root, in Release (BenchmarkDotNet refuses a Debug build):
