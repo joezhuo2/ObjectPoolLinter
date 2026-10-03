@@ -301,7 +301,7 @@ namespace ObjectPoolLinter
                 if (typeParameter.IsReferenceType || conversion.Parent is not IArgumentOperation) return false;
 
                 return conversion.Type is { TypeKind: TypeKind.Interface } or
-                    { SpecialType: SpecialType.System_Object or SpecialType.System_ValueType or SpecialType.System_Enum };
+                { SpecialType: SpecialType.System_Object or SpecialType.System_ValueType or SpecialType.System_Enum };
             }
 
             // A hot method that is itself an iterator or async method: Unity (or the manager driving a

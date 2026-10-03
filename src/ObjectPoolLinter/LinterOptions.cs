@@ -134,7 +134,7 @@ namespace ObjectPoolLinter
         }
 
         // Values that could not be used, as messages for OPL004. Unrecognized option names are found
-        // separately, by FindUnrecognizedOptions.
+        // separately, by FindUnrecognizedKeys.
         internal ImmutableArray<string> Problems { get; }
 
         // How many calls deep the hot flag propagates from a hot method declared in this file.
@@ -207,18 +207,55 @@ namespace ObjectPoolLinter
                 problems.ToImmutable());
         }
 
-        // Keys starting with `object_pool_linter.` that the linter does not read, each with the closest
-        // known option when there is a plausible one. Empty when the host's Roslyn cannot list the keys
-        // it holds (AnalyzerConfigOptions.Keys arrived after Roslyn 3.8).
-        internal static IEnumerable<(string Key, string? Suggestion)> FindUnrecognizedOptions(AnalyzerConfigOptions options)
+        // Messages for OPL004 about keys the linter cannot act on: an `object_pool_linter.*` name it does
+        // not read, and one under a misspelled prefix (`object_pool_lintr.excluded_types`). Empty when the
+        // host's Roslyn cannot list the keys it holds (AnalyzerConfigOptions.Keys arrived after Roslyn 3.8).
+        internal static IEnumerable<string> FindUnrecognizedKeys(AnalyzerConfigOptions options)
         {
             foreach (var key in GetKeys(options))
             {
-                if (!key.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                if (KnownOptions.Contains(key)) continue;
+                if (key.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (KnownOptions.Contains(key)) continue;
 
-                yield return (key, SuggestOption(key));
+                    yield return UnrecognizedOption(key, key);
+                }
+                else if (HasMisspelledPrefix(key))
+                {
+                    yield return UnrecognizedOption(key, Prefix + key.Substring(key.IndexOf('.') + 1));
+                }
             }
+        }
+
+        // `corrected` is the key with its prefix spelled right, which is what the suggestion is drawn from.
+        private static string UnrecognizedOption(string key, string corrected)
+        {
+            var suggestion = SuggestOption(corrected);
+            if (suggestion != null)
+                return $"'{key}' is not a recognized option. Did you mean '{suggestion}'?";
+
+            // `closure_severity` is too far from `delegate_severity` for a suggestion, so list the kinds.
+            if (corrected.EndsWith("_severity", StringComparison.OrdinalIgnoreCase))
+                return $"'{key}' is not a recognized option. The per-kind OPL002 severities are string_severity, " +
+                       "delegate_severity, params_severity, linq_severity, boxing_severity, iterator_severity, " +
+                       "async_severity and enumerator_severity.";
+
+            return $"'{key}' is not a recognized option.";
+        }
+
+        // `object_pool_lintr.`, `objectpoollinter.`, `object-pool-linter.`: a first segment that is close
+        // to the linter's but not equal to it, so every option under it would be silently ignored.
+        private static bool HasMisspelledPrefix(string key)
+        {
+            var dot = key.IndexOf('.');
+            if (dot <= 0 || dot == key.Length - 1) return false;
+
+            var segment = key.Substring(0, dot).ToLowerInvariant();
+            const string expected = "object_pool_linter";
+            if (segment == expected) return false;
+
+            return segment.Replace("_", string.Empty).Replace("-", string.Empty) == "objectpoollinter" ||
+                   EditDistance(segment, expected) <= 2;
         }
 
         internal bool IsExcludedType(INamedTypeSymbol type)
@@ -292,6 +329,38 @@ namespace ObjectPoolLinter
 
         private static bool IsTelemetryOn(AnalyzerConfigOptions options) =>
             options.TryGetValue(TelemetryOption, out var value) && value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        // The compiler applies a rule-wide OPL002 severity to every OPL002 diagnostic after the analyzer
+        // has picked a per-kind one, so `linq_severity = warning` next to
+        // `dotnet_diagnostic.OPL002.severity = suggestion` does nothing. `ruleWide` is the severity the
+        // compiler holds for OPL002, null when none is set: `dotnet_diagnostic.*` lines are not passed to
+        // analyzers as options, so the caller reads it from the compilation. The category line is read
+        // here. A kind set to `none` is still honoured (the analyzer never reports it), and one equal to
+        // the rule-wide severity changes nothing.
+        internal static IEnumerable<string> FindOverriddenKindSeverities(AnalyzerConfigOptions options, ReportDiagnostic? ruleWide)
+        {
+            var source = "dotnet_diagnostic.OPL002.severity";
+            if (ruleWide is null or ReportDiagnostic.Default)
+            {
+                if (!options.TryGetValue(CategorySeverityKey, out var category) ||
+                    !TryParseSeverity(category.Trim(), out var parsed) || parsed == ReportDiagnostic.Default) yield break;
+
+                ruleWide = parsed;
+                source = CategorySeverityKey;
+            }
+
+            foreach (var (_, option) in SeverityOptions)
+            {
+                if (!options.TryGetValue(option, out var value) || !TryParseSeverity(value.Trim(), out var severity)) continue;
+                if (severity is ReportDiagnostic.Suppress or ReportDiagnostic.Default || severity == ruleWide) continue;
+
+                yield return $"'{value.Trim()}' in '{option}' has no effect, because '{source}' is set and the " +
+                             "compiler applies it to every OPL002 diagnostic. Remove that line to use per-kind severities.";
+            }
+        }
+
+        // Lowercase because the compiler lowercases every .editorconfig key.
+        private const string CategorySeverityKey = "dotnet_analyzer_diagnostic.category-performance.severity";
 
         private static bool IsBoolean(string value) =>
             value.Equals("true", StringComparison.OrdinalIgnoreCase) || value.Equals("false", StringComparison.OrdinalIgnoreCase);

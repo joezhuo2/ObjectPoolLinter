@@ -335,9 +335,18 @@ How it combines with `dotnet_diagnostic.OPL002.severity`:
   too, since it has the same effect.
 - The exception is `none`: a kind set to `none` is never reported, whatever the rule-wide severity.
 - `dotnet_diagnostic.OPL002.severity = none` turns off every kind.
+- Since 1.9.7, a per-kind severity that a rule-wide one overrides is reported as
+  [OPL004](rules/OPL004.md), naming the line that wins. The rule-wide severity is found wherever the
+  compiler takes it from: `.editorconfig`, `.globalconfig`, a rule set or `<NoWarn>`. A kind set to
+  `none`, to `default`, or to the same severity as the rule-wide line is not reported.
+
+```
+warning OPL004: ObjectPoolLinter option ignored: 'suggestion' in 'object_pool_linter.string_severity' has no effect, because 'dotnet_diagnostic.OPL002.severity' is set and the compiler applies it to every OPL002 diagnostic. Remove that line to use per-kind severities.
+```
 
 Each OPL002 diagnostic carries its kind in the `AllocationKind` property (`string`, `delegate`,
-`params`, `linq` or `boxing`), for tools that read diagnostic properties.
+`params`, `linq`, `boxing`, `iterator`, `async` or `enumerator`), for tools that read diagnostic
+properties.
 
 ## Automatic suppressions (`suppressions`)
 
@@ -392,6 +401,12 @@ warning OPL004: ObjectPoolLinter option ignored: 'object_pool_linter.exlude_type
 warning OPL004: ObjectPoolLinter option ignored: 'loud' in 'object_pool_linter.linq_severity' is not a severity. Use none, silent, suggestion, warning, error or default.
 warning OPL004: ObjectPoolLinter option ignored: 'Tick(float' in 'object_pool_linter.additional_hot_methods' has a parameter list that does not end with ')'.
 ```
+
+Since 1.9.7 it also reports an option under a misspelled prefix (`object_pool_lintr.excluded_types`,
+`objectpoollinter.excluded_types`), lists the eight kinds for an unknown `*_severity` name such as
+`object_pool_linter.closure_severity`, and reports a per-kind OPL002 severity that a rule-wide one
+overrides (see [Per-kind OPL002 severity](#per-kind-opl002-severity)). Every message is in
+[OPL004](rules/OPL004.md).
 
 It is reported once per project, at the end of the compilation, with no source location: it appears
 in build output and in the IDE's error list when full-solution analysis is on, but not as a squiggle

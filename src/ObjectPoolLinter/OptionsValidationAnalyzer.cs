@@ -61,20 +61,37 @@ namespace ObjectPoolLinter
             var checkedOptions = new HashSet<AnalyzerConfigOptions>();
             var reported = new HashSet<string>(System.StringComparer.Ordinal);
 
-            void Check(AnalyzerConfigOptions options)
+            var compilationOptions = context.Compilation.Options;
+
+            void Check(AnalyzerConfigOptions options, SyntaxTree? tree)
             {
+                foreach (var message in LinterOptions.FindOverriddenKindSeverities(options, GetRuleWideSeverity(tree)))
+                    Report(message);
+
                 if (!checkedOptions.Add(options)) return;
 
-                foreach (var (key, suggestion) in LinterOptions.FindUnrecognizedOptions(options))
-                {
-                    var message = suggestion == null
-                        ? $"'{key}' is not a recognized option."
-                        : $"'{key}' is not a recognized option. Did you mean '{suggestion}'?";
+                foreach (var message in LinterOptions.FindUnrecognizedKeys(options))
                     Report(message);
-                }
 
                 foreach (var problem in LinterOptions.Parse(options, regexCache).Problems)
                     Report(problem);
+            }
+
+            // `dotnet_diagnostic.OPL002.severity` from .editorconfig or .globalconfig reaches the compiler
+            // as tree options, not as analyzer options; a rule set or <NoWarn> as compilation options.
+            ReportDiagnostic? GetRuleWideSeverity(SyntaxTree? tree)
+            {
+                var provider = compilationOptions.SyntaxTreeOptionsProvider;
+                if (tree != null && provider != null &&
+                    provider.TryGetDiagnosticValue(tree, HiddenAllocationAnalyzer.DiagnosticId, context.CancellationToken, out var severity))
+                    return severity;
+
+                if (provider != null && TryGetGlobalDiagnosticValue(provider, HiddenAllocationAnalyzer.DiagnosticId, context.CancellationToken, out severity))
+                    return severity;
+
+                return compilationOptions.SpecificDiagnosticOptions.TryGetValue(HiddenAllocationAnalyzer.DiagnosticId, out severity)
+                    ? severity
+                    : null;
             }
 
             void Report(string message)
@@ -83,12 +100,40 @@ namespace ObjectPoolLinter
                     context.ReportDiagnostic(Diagnostic.Create(Rule, Location.None, message));
             }
 
-            Check(provider.GlobalOptions);
+            Check(provider.GlobalOptions, null);
             foreach (var tree in context.Compilation.SyntaxTrees)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
-                Check(provider.GetOptions(tree));
+                Check(provider.GetOptions(tree), tree);
             }
+        }
+
+        // SyntaxTreeOptionsProvider.TryGetGlobalDiagnosticValue, which holds `dotnet_diagnostic.*` lines
+        // from a .globalconfig, arrived after Roslyn 3.8; the analyzer builds against 3.8 so that Unity
+        // 2021.3 can load it, and reaches the method by reflection when the host has it.
+        private static readonly System.Reflection.MethodInfo? GlobalDiagnosticValueMethod =
+            typeof(SyntaxTreeOptionsProvider).GetMethod(
+                "TryGetGlobalDiagnosticValue",
+                new[] { typeof(string), typeof(System.Threading.CancellationToken), typeof(ReportDiagnostic).MakeByRefType() });
+
+        private static bool TryGetGlobalDiagnosticValue(
+            SyntaxTreeOptionsProvider provider, string id, System.Threading.CancellationToken cancellationToken, out ReportDiagnostic severity)
+        {
+            severity = ReportDiagnostic.Default;
+            if (GlobalDiagnosticValueMethod == null) return false;
+
+            var arguments = new object?[] { id, cancellationToken, null };
+            try
+            {
+                if (GlobalDiagnosticValueMethod.Invoke(provider, arguments) is not true) return false;
+            }
+            catch (System.Reflection.TargetInvocationException)
+            {
+                return false;
+            }
+
+            severity = (ReportDiagnostic)arguments[2]!;
+            return true;
         }
     }
 }

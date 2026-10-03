@@ -458,7 +458,9 @@ public class Anything { }
                     "object_pool_linter.iterator_severity = warning\n" +
                     "object_pool_linter.async_severity = none\n" +
                     "object_pool_linter.enumerator_severity = suggestion\n" +
-                    "dotnet_diagnostic.OPL002.severity = warning\n" +
+                    "dotnet_diagnostic.OPL001.severity = error\n" +
+                    "dotnet_diagnostic.OPLS004.severity = none\n" +
+                    "dotnet_diagnostic.CA1822.severity = none\n" +
                     "indent_style = space")
                 .RunAsync();
         }
@@ -516,6 +518,85 @@ public class Anything { }
                     InvalidOption("'Think)' in 'object_pool_linter.additional_hot_methods' has a ')' without a matching '('."),
                     InvalidOption("'Tick(float' in 'object_pool_linter.additional_hot_methods' has a parameter list that does not end with ')'."),
                     InvalidOption("'Overlay(' in 'object_pool_linter.excluded_types_regex' is not a valid regular expression."))
+                .RunAsync();
+        }
+
+        // --- OPL004 since 1.9.7 ---
+
+        [Theory]
+        [InlineData("object_pool_lintr.excluded_types")]
+        [InlineData("objectpoollinter.excluded_types")]
+        [InlineData("object-pool-linter.excluded_types")]
+        public async Task OptionsValidation_MisspelledPrefix_SuggestsTheKnownOption(string key)
+        {
+            await CreateTest<OptionsValidationAnalyzer>(
+                    AnySource,
+                    key + " = LoadingScreen",
+                    InvalidOption($"'{key}' is not a recognized option. Did you mean 'object_pool_linter.excluded_types'?"))
+                .RunAsync();
+        }
+
+        [Fact]
+        public async Task OptionsValidation_UnrelatedPrefix_NoDiagnostic()
+        {
+            await CreateTest<OptionsValidationAnalyzer>(
+                    AnySource,
+                    "object_pool.size = 4\nmy_linter.excluded_types = LoadingScreen")
+                .RunAsync();
+        }
+
+        [Fact]
+        public async Task OptionsValidation_UnknownKindSeverity_ListsTheKinds()
+        {
+            await CreateTest<OptionsValidationAnalyzer>(
+                    AnySource,
+                    "object_pool_linter.closure_severity = warning",
+                    InvalidOption("'object_pool_linter.closure_severity' is not a recognized option. The per-kind OPL002 severities are " +
+                                  "string_severity, delegate_severity, params_severity, linq_severity, boxing_severity, " +
+                                  "iterator_severity, async_severity and enumerator_severity."))
+                .RunAsync();
+        }
+
+        [Fact]
+        public async Task OptionsValidation_KindSeverityOverriddenByRuleWideSeverity()
+        {
+            await CreateTest<OptionsValidationAnalyzer>(
+                    AnySource,
+                    "dotnet_diagnostic.OPL002.severity = warning\n" +
+                    "object_pool_linter.string_severity = suggestion\n" +
+                    "object_pool_linter.linq_severity = warning\n" +
+                    "object_pool_linter.params_severity = none\n" +
+                    "object_pool_linter.boxing_severity = default",
+                    InvalidOption("'suggestion' in 'object_pool_linter.string_severity' has no effect, because " +
+                                  "'dotnet_diagnostic.OPL002.severity' is set and the compiler applies it to every OPL002 " +
+                                  "diagnostic. Remove that line to use per-kind severities."))
+                .RunAsync();
+        }
+
+        [Fact]
+        public async Task OptionsValidation_KindSeverityOverriddenByGlobalConfigSeverity()
+        {
+            var test = CreateTest<OptionsValidationAnalyzer>(
+                AnySource,
+                "object_pool_linter.boxing_severity = warning",
+                InvalidOption("'warning' in 'object_pool_linter.boxing_severity' has no effect, because " +
+                              "'dotnet_diagnostic.OPL002.severity' is set and the compiler applies it to every OPL002 " +
+                              "diagnostic. Remove that line to use per-kind severities."));
+            test.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", "is_global = true\ndotnet_diagnostic.OPL002.severity = error\n"));
+
+            await test.RunAsync();
+        }
+
+        [Fact]
+        public async Task OptionsValidation_KindSeverityOverriddenByCategorySeverity()
+        {
+            await CreateTest<OptionsValidationAnalyzer>(
+                    AnySource,
+                    "dotnet_analyzer_diagnostic.category-Performance.severity = suggestion\n" +
+                    "object_pool_linter.linq_severity = error",
+                    InvalidOption("'error' in 'object_pool_linter.linq_severity' has no effect, because " +
+                                  "'dotnet_analyzer_diagnostic.category-performance.severity' is set and the compiler applies it " +
+                                  "to every OPL002 diagnostic. Remove that line to use per-kind severities."))
                 .RunAsync();
         }
     }

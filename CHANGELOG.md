@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.7] - 2026-10-03
+
+OPL004 checks more of the configuration. A build can report new OPL004 warnings that 1.9.6 left out:
+for an option under a misspelled prefix, and for a per-kind OPL002 severity next to a rule-wide
+`dotnet_diagnostic.OPL002.severity` that overrides it. No other rule changes.
+
+### Added
+- **Misspelled prefix (F75).** An option whose first segment is close to `object_pool_linter` (two
+  edits or fewer, or the same letters without `_` and `-`) is reported as OPL004, with the option it was
+  probably meant to be: `'object_pool_lintr.excluded_types' is not a recognized option. Did you mean
+  'object_pool_linter.excluded_types'?`. Until now every option under such a prefix was silently ignored.
+- **Unknown per-kind severity (F75).** An unrecognized `object_pool_linter.*_severity` name too far from
+  a known one for a suggestion (`closure_severity`, `lambda_severity`) now lists the eight per-kind
+  severities in its OPL004 message.
+- **Overridden per-kind severity (F77).** A per-kind OPL002 severity that a rule-wide severity overrides
+  is reported as OPL004, naming the line that wins: `'suggestion' in 'object_pool_linter.string_severity'
+  has no effect, because 'dotnet_diagnostic.OPL002.severity' is set ...`. The rule-wide severity is read
+  from the compilation, so it is found in `.editorconfig`, `.globalconfig` (on compilers with
+  `TryGetGlobalDiagnosticValue`, reached by reflection since the analyzer builds against Roslyn 3.8), a
+  rule set or `<NoWarn>`; `dotnet_analyzer_diagnostic.category-Performance.severity` is checked too. A
+  kind set to `none` (still honoured), `default`, or the same severity as the rule-wide line is not
+  reported.
+- Seven tests in `ConfigurationTests.cs`: three misspelled prefixes, an unrelated prefix, an unknown
+  kind severity, and an overriding severity from `.editorconfig`, `.globalconfig` and the Performance
+  category.
+
+### Changed
+- [docs/rules/OPL004.md](docs/rules/OPL004.md) lists the new causes and messages, and says why an
+  unknown ID in `dotnet_diagnostic.<id>.severity` cannot be reported: the compiler does not pass those
+  lines to analyzers as options. [docs/configuration.md](docs/configuration.md) and
+  [docs/rules/OPL002.md](docs/rules/OPL002.md) describe the overridden-severity check; the
+  configuration guide's list of `AllocationKind` values now has all eight kinds.
+
+### Fixed
+- `src/ObjectPoolLinter/HiddenAllocationAnalyzer.cs` indentation that `dotnet format
+  --verify-no-changes` rejected in CI (`WHITESPACE: Fix whitespace formatting`), from the 1.9.4 generic
+  boxing check.
+
 ## [v1.9.6] - 2026-10-03
 
 Build-side checks for configuration and the Unity package name. The analyzers are unchanged; a build
@@ -1792,7 +1830,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.6...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.7...HEAD
+[v1.9.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.6...v1.9.7
 [v1.9.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.5...v1.9.6
 [v1.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.4...v1.9.5
 [v1.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.3...v1.9.4
