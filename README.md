@@ -19,7 +19,7 @@ A Roslyn analyzer for Unity C# that detects allocations in hot paths (like `Upda
 - **Covers 18 Unity message methods**: `Update`, `FixedUpdate`, `LateUpdate`, `OnGUI`, `OnTriggerStay`, `OnTriggerStay2D`, `OnCollisionStay`, `OnCollisionStay2D`, `OnMouseOver`, `OnMouseDrag`, `OnAnimatorMove`, `OnAnimatorIK`, `OnRenderObject`, `OnWillRenderObject`, `OnPreRender`, `OnPostRender`, `OnDrawGizmos`, `OnDrawGizmosSelected`
 - **Follows calls**: a helper a hot method calls is checked too, and what it calls, up to three calls deep by default, through virtual and interface calls, with the path in the diagnostic's `CallChain` property - see [Helpers called from a hot method](docs/configuration.md#helpers-called-from-a-hot-method-max_call_depth)
 - **Configurable**: add your own hot methods (`Tick`, `Tick(float)`, `OnPreCull`, custom update loops), exclude types by name or regex, set how deep calls are followed, and set OPL002's severity per kind of allocation, all from `.editorconfig` - see [Configuration](#configuration)
-- **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls, writes the pool class when none exists, rents local arrays from `ArrayPool<T>.Shared` inside a `try`/`finally`, or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, and turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
+- **Code fixes**: OPL001 replaces allocations with object pool `Get()` calls, writes the pool class when none exists, rents local arrays from `ArrayPool<T>.Shared` inside a `try`/`finally`, or adds TODO comments; OPL002 caches capturing lambdas and method-group delegates in fields assigned in `Awake()`, builds interpolated strings with a reused `StringBuilder`, turns simple `Where`/`Select`/`ToList` chains into a loop filling a reused list, replaces a `foreach` over an iterator method with a method filling a reused list, and makes `async` methods that never await synchronous; OPL003 rewrites `tag ==` to `CompareTag()`, `GetComponents*<T>()` to the overload filling a reused list, and `Input.touches` to `Input.touchCount` with `Input.GetTouch(i)`
 - **Fix All everywhere**: every code fix of all three rules applies across a document, project or solution in one step
 - **Opt-in, local-only telemetry**: `object_pool_linter.telemetry = true` reports how often each rule fired ([OPL010](docs/rules/OPL010.md)) and counts the code fixes you apply in a file on your machine. Nothing is sent anywhere - see [Telemetry](docs/telemetry.md)
 - **Writes the pool for you**: `[ObjectPool]` on a class generates `{TypeName}Pool` with one `Get()` overload per constructor, plus `Return()`, `Clear()` and partial hooks for resetting a recycled instance - see [Generating pools](docs/source-generator.md)
@@ -254,7 +254,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.9.2.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.9.3.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -397,7 +397,7 @@ condition and the ways to fix an array allocation by hand.
 
 ### OPL002 code fixes
 
-OPL002 offers a rewrite for four constructs. Each one is offered only for the shapes it can rewrite
+OPL002 offers a rewrite for six constructs. Each one is offered only for the shapes it can rewrite
 without changing what the code does; the other shapes are still reported, with no fix, and
 [docs/rules/OPL002.md](docs/rules/OPL002.md#code-fixes) lists exactly which shapes qualify.
 
@@ -407,11 +407,15 @@ without changing what the code does; the other shapes are still reported, with n
 | `delegate for ...()` | **Cache the delegate in a field assigned in Awake()** | `Action callback = Spawn;` becomes `Action callback = _spawn;`, with `_spawn = Spawn;` in `Awake()` |
 | `string interpolation` | **Build the string with a reused StringBuilder** | `var text = $"hp: {hp}";` becomes `_textBuilder.Clear().Append("hp: ").Append(hp);` then `var text = _textBuilder.ToString();` |
 | `LINQ Where().Select().ToList()` | **Replace LINQ with a loop filling a reused List&lt;T&gt;** | a `for` loop over the `List<T>` or array that clears and fills a `List<T>` field, which the result then refers to |
+| `iterator state machine for ...()` | **Fill a reused List&lt;T&gt; instead of iterating** | `foreach (var e in Nearby(5f))` becomes `FillNearby(_nearbyBuffer, 5f);` then `foreach (var e in _nearbyBuffer)`, where `FillNearby` is a copy of the iterator that adds to the list instead of yielding |
+| `async state machine for ...()` | **Make the method synchronous** | `private async Task<int> Count()` that never awaits becomes `private int Count()`, and `await Count()` and `_ = Count();` in the class drop the `await` and the `_ =` |
 
 The two delegate fixes need a `MonoBehaviour`, because they rely on `Awake()` running before the hot
 method; they add `Awake()` when the class has none. The `StringBuilder` fix still leaves one allocation
 per run, the final `ToString()`, which OPL002 keeps reporting. The LINQ fix hands back the same list on
-every run, so code that keeps the result past the current frame has to copy it. All four support
+every run, so code that keeps the result past the current frame has to copy it, and so does the iterator
+fix, which also builds the whole sequence before the loop starts. A method made synchronous throws to
+its caller directly instead of through a task. All six support
 **Fix All**, which applies only the fix you picked: running it on a cached lambda leaves the strings
 and LINQ chains in the same scope alone.
 

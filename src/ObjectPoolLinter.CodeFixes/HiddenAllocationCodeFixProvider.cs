@@ -20,8 +20,10 @@ namespace ObjectPoolLinter
     /// <summary>
     /// Code fixes for OPL002: caches a capturing lambda or a method-group delegate in a field assigned in
     /// <c>Awake()</c>, builds an interpolated string with a reused <c>StringBuilder</c>, and turns a
-    /// simple <c>Where</c>/<c>Select</c>/<c>ToList</c> chain into a loop filling a reused list. Each fix
-    /// is offered only for the shapes it can rewrite without changing what the code does.
+    /// simple <c>Where</c>/<c>Select</c>/<c>ToList</c> chain into a loop filling a reused list, fills a
+    /// reused list in place of a <c>foreach</c> over an iterator method, and makes an <c>async</c> method
+    /// that never awaits synchronous. Each fix is offered only for the shapes it can rewrite without
+    /// changing what the code does, apart from the differences its documentation names.
     /// </summary>
     [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(HiddenAllocationCodeFixProvider)), Shared]
     public sealed class HiddenAllocationCodeFixProvider : CodeFixProvider
@@ -30,6 +32,8 @@ namespace ObjectPoolLinter
         internal const string CacheMethodGroupKey = "ObjectPoolLinterCacheMethodGroup";
         internal const string UseStringBuilderKey = "ObjectPoolLinterUseStringBuilder";
         internal const string LinqToLoopKey = "ObjectPoolLinterLinqToLoop";
+        internal const string IteratorToListKey = "ObjectPoolLinterIteratorToList";
+        internal const string RemoveAsyncKey = "ObjectPoolLinterRemoveAsync";
 
         /// <inheritdoc/>
         public override ImmutableArray<string> FixableDiagnosticIds =>
@@ -84,7 +88,10 @@ namespace ObjectPoolLinter
             {
                 AnonymousFunctionExpressionSyntax lambda => CacheLambda(lambda, hot, model, cancellationToken),
                 InterpolatedStringExpressionSyntax interpolated => UseStringBuilder(interpolated, hot, model, eol, cancellationToken),
-                InvocationExpressionSyntax invocation => LinqToLoop(invocation, hot, model, eol, cancellationToken),
+                InvocationExpressionSyntax invocation => LinqToLoop(invocation, hot, model, eol, cancellationToken)
+                    ?? IteratorToList(invocation, hot, model, eol, cancellationToken)
+                    ?? RemoveAsync(invocation, hot, model, cancellationToken),
+                MethodDeclarationSyntax declaration => RemoveAsync(declaration, hot, model, cancellationToken),
                 ExpressionSyntax expression => CacheMethodGroup(expression, hot, model, cancellationToken),
                 _ => null,
             };
@@ -400,6 +407,258 @@ namespace ObjectPoolLinter
             var replacement = SyntaxFactory.IdentifierName(bufferName).WithTriviaFrom(invocation);
             rewrite.Replacements[block] = InsertBefore(block, statement, statement.ReplaceNode(invocation, replacement), inserted);
             return rewrite;
+        }
+
+        // F38. `foreach (var e in Nearby(5f))` over an iterator method declared in the same class becomes
+        //     FillNearby(_nearbyBuffer, 5f);
+        //     foreach (var e in _nearbyBuffer)
+        // where FillNearby is a copy of Nearby that clears the list and adds to it instead of yielding,
+        // and the list is held in a field. The iterator stays, for its other callers. The sequence is now
+        // built in full before the loop starts, rather than one element per iteration.
+        private static Rewrite? IteratorToList(InvocationExpressionSyntax invocation, HotMethod hot, SemanticModel model, string eol, CancellationToken cancellationToken)
+        {
+            if (invocation.Parent is not ForEachStatementSyntax { Parent: BlockSyntax block } loop || loop.Expression != invocation) return null;
+            if (!loop.AwaitKeyword.IsKind(SyntaxKind.None)) return null;
+            if (loop.Ancestors().TakeWhile(a => a != hot.Declaration).Any(a => a is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax)) return null;
+
+            if (model.GetOperation(invocation, cancellationToken) is not IInvocationOperation { TargetMethod: var iterator } call) return null;
+            if (call.Instance is not (null or IInstanceReferenceOperation { ReferenceKind: InstanceReferenceKind.ContainingTypeInstance })) return null;
+            if (iterator.IsGenericMethod || iterator.Parameters.Any(p => p.RefKind != RefKind.None)) return null;
+
+            // IEnumerable<T> only: an IEnumerator is driven by its caller (a coroutine), and an
+            // IAsyncEnumerable<T> awaits between elements.
+            if (iterator.ReturnType is not INamedTypeSymbol { TypeArguments: { Length: 1 } } sequence ||
+                sequence.OriginalDefinition.SpecialType != SpecialType.System_Collections_Generic_IEnumerable_T)
+                return null;
+            var elementType = sequence.TypeArguments[0];
+            if (!IsNameable(elementType)) return null;
+
+            if (iterator.DeclaringSyntaxReferences.Length != 1 ||
+                iterator.DeclaringSyntaxReferences[0].GetSyntax(cancellationToken) is not MethodDeclarationSyntax { Body: { } body } declaration ||
+                declaration.Parent != hot.Class)
+                return null;
+
+            var yields = Yields(body);
+            if (yields.Count == 0) return null;
+
+            var rewrite = new Rewrite(hot, "Fill a reused List<T> instead of iterating", IteratorToListKey);
+            var list = TypeName(model, hot, "System.Collections.Generic", "List", 1, rewrite) + "<" + Display(elementType, model, hot) + ">";
+
+            var baseName = iterator.Name.Length > 3 && iterator.Name.StartsWith("Get", StringComparison.Ordinal) && char.IsUpper(iterator.Name[3])
+                ? iterator.Name.Substring(3)
+                : iterator.Name;
+
+            // A fill method an earlier fix added for the same iterator is reused.
+            var fillName = "Fill" + char.ToUpperInvariant(baseName[0]) + baseName.Substring(1);
+            if (!HasFillMethod(hot, fillName, iterator, elementType))
+            {
+                fillName = hot.FreeMemberName(fillName);
+                rewrite.Methods.Add((declaration, FillMethod(declaration, iterator, fillName, list, yields, hot, eol)));
+            }
+
+            var bufferName = hot.FreeMemberName(FieldName(baseName, "Buffer", "_buffer"));
+            rewrite.Fields.Add(hot.FieldModifiers(readOnly: true) + list + " " + bufferName + " = new " + list + "();");
+
+            var receiver = invocation.Expression is MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } ? "this." : "";
+            var arguments = invocation.ArgumentList.Arguments.Count == 0 ? "" : ", " + invocation.ArgumentList.Arguments.ToString();
+            var fill = SyntaxFactory.ParseStatement(Indentation(loop) + receiver + fillName + "(" + bufferName + arguments + ");" + eol);
+
+            var replacement = SyntaxFactory.IdentifierName(bufferName).WithTriviaFrom(invocation);
+            rewrite.Replacements[block] = InsertBefore(block, loop, loop.ReplaceNode(invocation, replacement), new[] { fill });
+            return rewrite;
+        }
+
+        // The `yield` statements of the method itself, not of a local function or lambda inside it.
+        private static List<YieldStatementSyntax> Yields(BlockSyntax body) =>
+            body.DescendantNodes(node => node is not (LocalFunctionStatementSyntax or AnonymousFunctionExpressionSyntax))
+                .OfType<YieldStatementSyntax>()
+                .ToList();
+
+        private static bool HasFillMethod(HotMethod hot, string name, IMethodSymbol iterator, ITypeSymbol elementType)
+        {
+            foreach (var member in hot.Type.GetMembers(name))
+            {
+                if (member is not IMethodSymbol { ReturnsVoid: true, IsGenericMethod: false } method) continue;
+                if (method.IsStatic != iterator.IsStatic || method.Parameters.Length != iterator.Parameters.Length + 1) continue;
+
+                if (method.Parameters[0].Type is not INamedTypeSymbol { TypeArguments: { Length: 1 } } list ||
+                    list.OriginalDefinition.ToDisplayString() != "System.Collections.Generic.List<T>" ||
+                    !SymbolEqualityComparer.Default.Equals(list.TypeArguments[0], elementType))
+                    continue;
+
+                if (iterator.Parameters.Select((p, i) => SymbolEqualityComparer.Default.Equals(p.Type, method.Parameters[i + 1].Type)).All(same => same))
+                    return true;
+            }
+
+            return false;
+        }
+
+        // `IEnumerable<int> Nearby(float radius) { ... yield return id; ... yield break; }` becomes
+        // `private void FillNearby(List<int> results, float radius) { results.Clear(); ... results.Add(id); ... return; }`.
+        // The list goes first, so a `params` parameter or optional ones can stay last.
+        private static MemberDeclarationSyntax FillMethod(MethodDeclarationSyntax iterator, IMethodSymbol symbol, string name, string list, List<YieldStatementSyntax> yields, HotMethod hot, string eol)
+        {
+            var body = iterator.Body!;
+            var resultsName = FreeLocalName("results", IdentifierTexts(iterator));
+
+            body = body.ReplaceNodes(yields, (original, _) => SyntaxFactory.ParseStatement(
+                    original.IsKind(SyntaxKind.YieldReturnStatement)
+                        ? resultsName + ".Add(" + original.Expression + ");"
+                        : "return;")
+                .WithTriviaFrom(original));
+
+            var memberIndent = Indentation(iterator);
+            var statementIndent = Indentation(body.Statements.FirstOrDefault()) is { Length: > 0 } first ? first : memberIndent + IndentUnit(hot.Class);
+            var clear = SyntaxFactory.ParseStatement(statementIndent + resultsName + ".Clear();" + eol);
+            body = body.WithStatements(body.Statements.Insert(0, clear));
+
+            var parameters = new[] { list + " " + resultsName }.Concat(iterator.ParameterList.Parameters.Select(p => p.ToString()));
+            var header = memberIndent + "private " + (symbol.IsStatic ? "static " : "") + "void " + name +
+                         "(" + string.Join(", ", parameters) + ")" + iterator.ParameterList.GetTrailingTrivia().ToFullString();
+
+            return SyntaxFactory.ParseMemberDeclaration(header + body.ToFullString())!;
+        }
+
+        // F39. An async method that never awaits runs to completion on the caller's thread and still
+        // allocates its state machine and task. `async Task Save()` becomes `void Save()`, `async
+        // Task<int> Count()` becomes `int Count()`, and the calls in the class drop their `await` or
+        // `_ =`. Offered for a private method of a class declared in one place, so every call is in
+        // view, and only when every call is one the fix can rewrite. An exception the method throws now
+        // reaches the caller directly instead of through the task.
+        private static Rewrite? RemoveAsync(InvocationExpressionSyntax invocation, HotMethod hot, SemanticModel model, CancellationToken cancellationToken)
+        {
+            if (model.GetSymbolInfo(invocation, cancellationToken).Symbol is not IMethodSymbol method) return null;
+            return RemoveAsync(method, hot, model, cancellationToken);
+        }
+
+        // The hot method itself is async, such as `async void Update()` with no await left in it.
+        private static Rewrite? RemoveAsync(MethodDeclarationSyntax declaration, HotMethod hot, SemanticModel model, CancellationToken cancellationToken)
+        {
+            if (declaration != hot.Declaration) return null;
+            return RemoveAsync(hot.Symbol, hot, model, cancellationToken);
+        }
+
+        private static Rewrite? RemoveAsync(IMethodSymbol method, HotMethod hot, SemanticModel model, CancellationToken cancellationToken)
+        {
+            if (!method.IsAsync || method.DeclaredAccessibility != Accessibility.Private) return null;
+            if (!method.ExplicitInterfaceImplementations.IsEmpty || method.IsGenericMethod || method.PartialDefinitionPart != null || method.PartialImplementationPart != null) return null;
+            if (hot.Type.DeclaringSyntaxReferences.Length != 1) return null;
+
+            if (method.DeclaringSyntaxReferences.Length != 1 ||
+                method.DeclaringSyntaxReferences[0].GetSyntax(cancellationToken) is not MethodDeclarationSyntax declaration ||
+                declaration.Parent != hot.Class)
+                return null;
+
+            if (Awaits(declaration)) return null;
+
+            var returnType = SynchronousReturnType(declaration.ReturnType, method);
+            if (returnType == null) return null;
+
+            var rewrite = new Rewrite(hot, "Make the method synchronous", RemoveAsyncKey);
+
+            foreach (var name in hot.Class.DescendantNodes().OfType<SimpleNameSyntax>())
+            {
+                if (name.Identifier.ValueText != method.Name || !Binds(name, method, model, cancellationToken)) continue;
+
+                // A call inside the method itself would sit inside the declaration being replaced.
+                if (declaration.Span.Contains(name.Span)) return null;
+
+                var replacement = SynchronousCall(name, model, cancellationToken);
+                if (replacement == null) return null;
+
+                var (original, rewritten) = replacement.Value;
+                if (rewrite.Replacements.Keys.Any(k => k.Span.IntersectsWith(original.Span))) return null;
+                rewrite.Replacements[original] = rewritten;
+            }
+
+            rewrite.Replacements[declaration] = WithoutAsync(declaration, returnType);
+            return rewrite;
+        }
+
+        // An await of the method's own, outside any lambda or local function: `await x`, `await foreach`,
+        // `await using`.
+        private static bool Awaits(MethodDeclarationSyntax declaration)
+        {
+            var body = (SyntaxNode?)declaration.Body ?? declaration.ExpressionBody;
+            return body != null && body
+                .DescendantNodesAndTokens(node => node is not (LocalFunctionStatementSyntax or AnonymousFunctionExpressionSyntax))
+                .Any(element => element.IsKind(SyntaxKind.AwaitKeyword));
+        }
+
+        // void for `async void`, Task and ValueTask; T for Task<T> and ValueTask<T>, written as the
+        // method's own return type writes it.
+        private static TypeSyntax? SynchronousReturnType(TypeSyntax returnType, IMethodSymbol method)
+        {
+            if (method.ReturnsVoid) return returnType;
+
+            if (method.ReturnType is not INamedTypeSymbol { ContainingNamespace: { } ns } type || ns.ToDisplayString() != "System.Threading.Tasks") return null;
+            if (type.Name is not ("Task" or "ValueTask")) return null;
+            if (type.Arity == 0) return SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword));
+
+            var generic = returnType switch
+            {
+                GenericNameSyntax name => name,
+                QualifiedNameSyntax { Right: GenericNameSyntax name } => name,
+                AliasQualifiedNameSyntax { Name: GenericNameSyntax name } => name,
+                _ => null,
+            };
+            return generic?.TypeArgumentList.Arguments.Count == 1 ? generic.TypeArgumentList.Arguments[0] : null;
+        }
+
+        private static bool Binds(SimpleNameSyntax name, IMethodSymbol method, SemanticModel model, CancellationToken cancellationToken)
+        {
+            var info = model.GetSymbolInfo(name, cancellationToken);
+            return new[] { info.Symbol }.Concat(info.CandidateSymbols)
+                .Any(symbol => SymbolEqualityComparer.Default.Equals(symbol?.OriginalDefinition, method));
+        }
+
+        // `Save();` stays as it is; `await Save()` becomes `Save()`; `_ = Save();` becomes `Save();`.
+        // Anything else uses the task (stores it, passes it on, configures it) and has no rewrite.
+        private static (SyntaxNode Original, SyntaxNode Rewritten)? SynchronousCall(SimpleNameSyntax name, SemanticModel model, CancellationToken cancellationToken)
+        {
+            ExpressionSyntax callee = name;
+            if (name.Parent is MemberAccessExpressionSyntax memberAccess && memberAccess.Name == name)
+            {
+                if (memberAccess.Expression is not ThisExpressionSyntax) return null;
+                callee = memberAccess;
+            }
+
+            if (callee.Parent is not InvocationExpressionSyntax call || call.Expression != callee) return null;
+
+            switch (call.Parent)
+            {
+                case ExpressionStatementSyntax:
+                    return (call, call);
+                case AwaitExpressionSyntax awaited:
+                    return (awaited, call.WithTriviaFrom(awaited));
+                case AssignmentExpressionSyntax { Left: IdentifierNameSyntax { Identifier: { ValueText: "_" } } discard, Parent: ExpressionStatementSyntax } assignment
+                    when assignment.IsKind(SyntaxKind.SimpleAssignmentExpression) &&
+                         model.GetSymbolInfo(discard, cancellationToken).Symbol is IDiscardSymbol:
+                    return (assignment, call.WithTriviaFrom(assignment));
+                default:
+                    return null;
+            }
+        }
+
+        private static MethodDeclarationSyntax WithoutAsync(MethodDeclarationSyntax declaration, TypeSyntax returnType)
+        {
+            var asyncToken = declaration.Modifiers.First(m => m.IsKind(SyntaxKind.AsyncKeyword));
+            var index = declaration.Modifiers.IndexOf(asyncToken);
+
+            var result = declaration
+                .WithReturnType(returnType.WithTriviaFrom(declaration.ReturnType))
+                .WithModifiers(declaration.Modifiers.RemoveAt(index));
+
+            // The async keyword's leading trivia (indentation, a comment above the method) moves to what
+            // now starts the declaration after the attributes.
+            if (index == 0)
+            {
+                result = result.Modifiers.Count > 0
+                    ? result.WithModifiers(result.Modifiers.Replace(result.Modifiers[0], result.Modifiers[0].WithLeadingTrivia(asyncToken.LeadingTrivia)))
+                    : result.WithReturnType(result.ReturnType.WithLeadingTrivia(asyncToken.LeadingTrivia));
+            }
+
+            return result;
         }
 
         private static bool IsEnumerableCall(IInvocationOperation invocation, string name)

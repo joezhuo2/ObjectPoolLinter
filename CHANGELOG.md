@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.3] - 2026-10-02
+
+Code fixes for the iterator and `async` state machines OPL002 has reported since 1.5.5. No new
+diagnostics: a build reports exactly what 1.9.2 did.
+
+### Added
+- **Fill a reused List<T> instead of iterating (F38).** On `foreach (var e in Nearby(5f))` over an
+  iterator method of the same class that returns `IEnumerable<T>`, the fix adds `FillNearby(List<T>
+  results, float radius)`, a copy of the iterator that clears the list and calls `results.Add(x)` where
+  it had `yield return x` and `return` where it had `yield break`, and a `List<T>` field. The call becomes
+  `FillNearby(_nearbyBuffer, 5f);` before the loop, and the loop runs over `_nearbyBuffer`. The iterator
+  stays for its other callers, and a second call site reuses the fill method an earlier fix added. A
+  leading `Get` is dropped from the names (`GetAlive` gives `FillAlive` and `_aliveBuffer`).
+- **Make the method synchronous (F39).** On a call to a private `async` method of the same class that
+  never awaits, or on a hot method such as `async void Update()` that never awaits, the fix removes
+  `async`, turns `Task` and `ValueTask` into `void` and `Task<T>` and `ValueTask<T>` into `T`, and
+  rewrites every call in the class: `await Save()` becomes `Save()` and `_ = Save();` becomes
+  `Save();`. It is not offered when any call uses the task some other way (stores it, passes it on,
+  calls `ConfigureAwait`), when the method is not private, or when the class is partial.
+- Both fixes support Fix All, applied one at a time like the other OPL002 fixes.
+- Tests in `HiddenAllocationCodeFixProviderTests.cs` for both fixes, the shapes they skip, and a fill
+  method reused across call sites.
+
+### Changed
+- [docs/rules/OPL002.md](docs/rules/OPL002.md#code-fixes) documents the two fixes, when each is
+  offered, and what each changes about when code runs: the fill method builds the whole sequence before
+  the loop starts, and an exception from a method made synchronous reaches the caller directly instead
+  of through the task. The README's OPL002 code fix table and feature list are updated to match.
+- A code fix that adds no field no longer adds a blank line before the first member of the class.
+
 ## [v1.9.2] - 2026-10-02
 
 Call-graph analysis: the hot flag now follows calls, so an allocation in a helper that `Update` calls
@@ -1679,7 +1709,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.2...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.3...HEAD
+[v1.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.2...v1.9.3
 [v1.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.1...v1.9.2
 [v1.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.0...v1.9.1
 [v1.9.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.8.4...v1.9.0

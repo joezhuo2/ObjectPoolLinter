@@ -309,8 +309,8 @@ namespace ObjectPoolLinter
             type.Name == "MonoBehaviour" && type.ContainingNamespace?.ToDisplayString() == "UnityEngine";
     }
 
-    // The edits one fix makes: node replacements inside the class, fields and Awake statements to add,
-    // and using directives the new code needs.
+    // The edits one fix makes: node replacements inside the class, fields, methods and Awake statements
+    // to add, and using directives the new code needs.
     internal sealed class Rewrite
     {
         private readonly HotMethod _hot;
@@ -326,6 +326,9 @@ namespace ObjectPoolLinter
         internal string EquivalenceKey { get; }
         internal Dictionary<SyntaxNode, SyntaxNode> Replacements { get; } = new();
         internal List<string> Fields { get; } = new();
+
+        // Methods to add, each placed right after a member of the class as it was before the fix.
+        internal List<(MemberDeclarationSyntax After, MemberDeclarationSyntax Method)> Methods { get; } = new();
 
         // Each takes the indentation of the line it lands on, for code spanning several lines.
         internal List<Func<string, string>> AwakeStatements { get; } = new();
@@ -363,10 +366,20 @@ namespace ObjectPoolLinter
             var newClass = declaration.ReplaceNodes(replacements.Keys, (original, _) => replacements[original]);
             var members = newClass.Members;
 
+            // Replacing members keeps their positions, so an anchor's index in the original class is its
+            // index here. Inserted from the last anchor back, so earlier indices stay valid.
+            foreach (var (after, method) in Methods.OrderByDescending(m => declaration.Members.IndexOf(m.After)))
+            {
+                var index = declaration.Members.IndexOf(after) + 1;
+                members = members.Insert(index, method);
+                members = EnsureBlankLineBefore(members, index, eol);
+                members = EnsureBlankLineBefore(members, index + 1, eol);
+            }
+
             var fieldIndex = members.LastIndexOf(m => m is BaseFieldDeclarationSyntax) + 1;
             foreach (var field in Fields)
                 members = members.Insert(fieldIndex++, SyntaxFactory.ParseMemberDeclaration(memberIndent + field + eol)!);
-            members = EnsureBlankLineBefore(members, fieldIndex, eol);
+            if (Fields.Count > 0) members = EnsureBlankLineBefore(members, fieldIndex, eol);
 
             if (newAwake != null)
             {

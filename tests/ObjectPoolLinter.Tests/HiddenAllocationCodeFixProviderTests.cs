@@ -15,6 +15,8 @@ namespace ObjectPoolLinter.Tests
         private const string CacheMethodGroupKey = "ObjectPoolLinterCacheMethodGroup";
         private const string UseStringBuilderKey = "ObjectPoolLinterUseStringBuilder";
         private const string LinqToLoopKey = "ObjectPoolLinterLinqToLoop";
+        private const string IteratorToListKey = "ObjectPoolLinterIteratorToList";
+        private const string RemoveAsyncKey = "ObjectPoolLinterRemoveAsync";
 
         private static Task VerifyFixAsync(string source, string fixedSource, string equivalenceKey, params DiagnosticResult[] remaining)
         {
@@ -651,6 +653,291 @@ public class Squad : MonoBehaviour
 ";
 
             await VerifyNoFixAsync(source, Diagnostic(0), Diagnostic(1));
+        }
+
+        [Fact]
+        public async Task IteratorToList_ForEachOverIterator_AddsFillMethodAndBuffer()
+        {
+            var source = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+
+    IEnumerable<int> GetAlive(int min)
+    {
+        foreach (var h in hp)
+        {
+            if (h < 0) yield break;
+            if (h > min) yield return h;
+        }
+    }
+
+    void Update()
+    {
+        var total = 0;
+        foreach (var h in {|#0:GetAlive(3)|})
+            total += h;
+    }
+}
+";
+
+            var fixedSource = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    readonly List<int> hp = new List<int>();
+    private readonly List<int> _aliveBuffer = new List<int>();
+
+    IEnumerable<int> GetAlive(int min)
+    {
+        foreach (var h in hp)
+        {
+            if (h < 0) yield break;
+            if (h > min) yield return h;
+        }
+    }
+
+    private void FillAlive(List<int> results, int min)
+    {
+        results.Clear();
+        foreach (var h in hp)
+        {
+            if (h < 0) return;
+            if (h > min) results.Add(h);
+        }
+    }
+
+    void Update()
+    {
+        var total = 0;
+        FillAlive(_aliveBuffer, 3);
+        foreach (var h in _aliveBuffer)
+            total += h;
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, IteratorToListKey);
+        }
+
+        [Fact]
+        public async Task IteratorToList_ReusesExistingFillMethodAndAddsUsing()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    System.Collections.Generic.IEnumerable<int> Ids()
+    {
+        yield return 1;
+    }
+
+    private void FillIds(System.Collections.Generic.List<int> results)
+    {
+        results.Clear();
+        results.Add(1);
+    }
+
+    void Update()
+    {
+        foreach (var id in {|#0:this.Ids()|}) { }
+    }
+}
+";
+
+            var fixedSource = @"
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Squad : MonoBehaviour
+{
+    private readonly List<int> _idsBuffer = new List<int>();
+
+    System.Collections.Generic.IEnumerable<int> Ids()
+    {
+        yield return 1;
+    }
+
+    private void FillIds(System.Collections.Generic.List<int> results)
+    {
+        results.Clear();
+        results.Add(1);
+    }
+
+    void Update()
+    {
+        this.FillIds(_idsBuffer);
+        foreach (var id in _idsBuffer) { }
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, IteratorToListKey);
+        }
+
+        [Fact]
+        public async Task IteratorToList_UnsupportedShapes_OfferNoFix()
+        {
+            var source = @"
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+public class Other
+{
+    public IEnumerable<int> Ids() { yield return 1; }
+}
+
+public class Squad : MonoBehaviour
+{
+    readonly Other other = new Other();
+
+    IEnumerable<int> Ids() { yield return 1; }
+    IEnumerator Spawn() { yield return null; }
+
+    void Update()
+    {
+        var ids = {|#0:Ids()|};
+        foreach (var id in {|#1:other.Ids()|}) { }
+        var routine = {|#2:Spawn()|};
+    }
+}
+";
+
+            await VerifyNoFixAsync(source, Diagnostic(0), Diagnostic(1), Diagnostic(2));
+        }
+
+        [Fact]
+        public async Task RemoveAsync_RewritesCalleeAndCalls()
+        {
+            var source = @"
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Saver : MonoBehaviour
+{
+    int saved;
+
+    // Writes the save.
+    private async Task<int> SaveAsync()
+    {
+        saved++;
+        return saved;
+    }
+
+    void Update()
+    {
+        {|#0:SaveAsync()|};
+        _ = {|#1:this.SaveAsync()|};
+    }
+
+    async Task Flush()
+    {
+        var count = await SaveAsync();
+        await Task.Yield();
+    }
+}
+";
+
+            var fixedSource = @"
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Saver : MonoBehaviour
+{
+    int saved;
+
+    // Writes the save.
+    private int SaveAsync()
+    {
+        saved++;
+        return saved;
+    }
+
+    void Update()
+    {
+        SaveAsync();
+        this.SaveAsync();
+    }
+
+    async Task Flush()
+    {
+        var count = SaveAsync();
+        await Task.Yield();
+    }
+}
+";
+
+            var test = CreateTest(source, fixedSource);
+            test.CodeActionEquivalenceKey = RemoveAsyncKey;
+            test.TestState.ExpectedDiagnostics.AddRange(new[] { Diagnostic(0), Diagnostic(1) });
+            await test.RunAsync();
+        }
+
+        [Fact]
+        public async Task RemoveAsync_HotMethodWithoutAwait()
+        {
+            var source = @"
+using UnityEngine;
+
+public class Ticker : MonoBehaviour
+{
+    int frames;
+
+    async void {|#0:Update|}()
+    {
+        frames++;
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class Ticker : MonoBehaviour
+{
+    int frames;
+
+    void Update()
+    {
+        frames++;
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, RemoveAsyncKey);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_AwaitingPublicOrTaskUsed_OffersNoFix()
+        {
+            var source = @"
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class Saver : MonoBehaviour
+{
+    private async Task Awaits() { await Task.Yield(); }
+    public async Task Public() { }
+    private async Task Stored() { }
+
+    void Update()
+    {
+        {|#0:Awaits()|};
+        {|#1:Public()|};
+        var task = {|#2:Stored()|};
+    }
+}
+";
+
+            await VerifyNoFixAsync(source, Diagnostic(0), Diagnostic(1), Diagnostic(2));
         }
 
         private sealed class Test : CodeFixTest<DefaultVerifier>
