@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.5] - 2026-10-03
+
+Closes the code-fix items of the pre-2.0.0 checklist. Four of the five shipped earlier and are
+unchanged; the touches fix gains the shape it was missing. No analyzer reports anything new.
+
+### Added
+- **Use Input.touchCount and Input.GetTouch() on a stored array (F58).** `var touches = Input.touches;`
+  followed by `touches.Length`, `touches[i]` or `foreach (var touch in touches)` was reported with no
+  fix. The fix now removes the declaration and rewrites every use: `touches.Length` becomes
+  `Input.touchCount`, `touches[i]` becomes `Input.GetTouch(i)`, and each `foreach` becomes a `for` loop
+  with its own index name, so nested loops over the same touches do not collide. Offered only when
+  every use is one of those three shapes, the element is only read, no use sits in a lambda, anonymous
+  method or local function, the block has no `yield` or `await`, and no comment or directive sits above
+  the declaration. Passing the array on, returning it or writing to an element still gets no fix.
+- Five tests in `UnityApiAllocationCodeFixProviderTests.cs`: a local read through `.Length`, an index
+  and a `foreach`; nested loops over the same local; and no fix for a local passed on, an element
+  written, or a local captured by a lambda. They replace the test that expected no fix for any stored
+  array, for 546 in total.
+
+### Changed
+- [docs/rules/OPL003.md](docs/rules/OPL003.md) documents the stored-array shape and its conditions, and
+  the README's OPL003 code-fix table mentions it.
+
+### Notes
+- The other checklist items needed no change. F57 (`GetComponentsInChildren<T>()` to the
+  `List<T>` overload with a buffer field) and the first three shapes of F58 shipped in 1.5.1, F59 (the `{TypeName}Pool` class
+  with a `Stack<T>`, `Get()` and `Return()`), F60 (`ArrayPool<T>.Shared.Rent` in a `try`/`finally`) and
+  F61 (`ObjectPoolSuppressionAnalyzer`, with its tests for T107) in 1.5.4.
+
 ## [v1.9.4] - 2026-10-03
 
 Generic boxing in OPL002. A build that passes a type parameter to an `object` or interface parameter
@@ -1733,7 +1762,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.4...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.5...HEAD
+[v1.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.4...v1.9.5
 [v1.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.3...v1.9.4
 [v1.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.2...v1.9.3
 [v1.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.1...v1.9.2

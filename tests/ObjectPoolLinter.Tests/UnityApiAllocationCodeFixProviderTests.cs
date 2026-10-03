@@ -530,7 +530,63 @@ public class TouchInput : MonoBehaviour
         }
 
         [Fact]
-        public async Task GetTouch_ArrayStored_NoFix()
+        public async Task GetTouch_LocalInlined()
+        {
+            var source = @"
+using UnityEngine;
+
+public class TouchInput : MonoBehaviour
+{
+    void Update()
+    {
+        Touch[] touches = {|#0:Input.touches|};
+        if (touches.Length == 0)
+            return;
+
+        var first = touches[0].position;
+        for (int i = 0; i < touches.Length; i++)
+        {
+            var delta = touches[i].position.x - first.x;
+        }
+
+        foreach (var touch in touches)
+        {
+            var position = touch.position;
+        }
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class TouchInput : MonoBehaviour
+{
+    void Update()
+    {
+        if (Input.touchCount == 0)
+            return;
+
+        var first = Input.GetTouch(0).position;
+        for (int i = 0; i < Input.touchCount; i++)
+        {
+            var delta = Input.GetTouch(i).position.x - first.x;
+        }
+
+        for (int i2 = 0; i2 < Input.touchCount; i2++)
+        {
+            var touch = Input.GetTouch(i2);
+            var position = touch.position;
+        }
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, UseGetTouchKey);
+        }
+
+        [Fact]
+        public async Task GetTouch_LocalNestedLoops_TakeDistinctIndexNames()
         {
             var source = @"
 using UnityEngine;
@@ -540,6 +596,91 @@ public class TouchInput : MonoBehaviour
     void Update()
     {
         var touches = {|#0:Input.touches|};
+        foreach (var a in touches)
+            foreach (var b in touches)
+            {
+                var distance = a.position.x - b.position.x;
+            }
+    }
+}
+";
+
+            var fixedSource = @"
+using UnityEngine;
+
+public class TouchInput : MonoBehaviour
+{
+    void Update()
+    {
+        for (int i2 = 0; i2 < Input.touchCount; i2++)
+        {
+            var a = Input.GetTouch(i2);
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                var b = Input.GetTouch(i);
+                var distance = a.position.x - b.position.x;
+            }
+        }
+    }
+}
+";
+
+            await VerifyFixAsync(source, fixedSource, UseGetTouchKey);
+        }
+
+        [Fact]
+        public async Task GetTouch_LocalPassedOn_NoFix()
+        {
+            var source = @"
+using UnityEngine;
+
+public class TouchInput : MonoBehaviour
+{
+    void Handle(Touch[] touches) { }
+
+    void Update()
+    {
+        var touches = {|#0:Input.touches|};
+        Handle(touches);
+    }
+}
+";
+
+            await VerifyNoFixAsync(source);
+        }
+
+        [Fact]
+        public async Task GetTouch_LocalElementWritten_NoFix()
+        {
+            var source = @"
+using UnityEngine;
+
+public class TouchInput : MonoBehaviour
+{
+    void Update()
+    {
+        var touches = {|#0:Input.touches|};
+        touches[0].position.x = 1;
+    }
+}
+";
+
+            await VerifyNoFixAsync(source);
+        }
+
+        [Fact]
+        public async Task GetTouch_LocalCapturedByLambda_NoFix()
+        {
+            var source = @"
+using System;
+using UnityEngine;
+
+public class TouchInput : MonoBehaviour
+{
+    void Update()
+    {
+        var touches = {|#0:Input.touches|};
+        Func<int> count = () => touches.Length;
     }
 }
 ";

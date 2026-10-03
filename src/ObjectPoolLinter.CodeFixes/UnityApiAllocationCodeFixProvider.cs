@@ -169,6 +169,9 @@ namespace ObjectPoolLinter
                 case ForEachStatementSyntax loop when loop.Expression == node && hasTouchCount && hasGetTouch:
                     return ForEachToFor(loop, node, touchType, root, model, cancellationToken);
 
+                case EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator } clause when clause.Value == node && hasTouchCount && hasGetTouch:
+                    return InlineTouchesLocal(declarator, node, reference.Property.Type, touchType, root, model, cancellationToken);
+
                 default:
                     return null;
             }
@@ -176,18 +179,26 @@ namespace ObjectPoolLinter
 
         private static (SyntaxNode, SyntaxNode)? ForEachToFor(ForEachStatementSyntax loop, ExpressionSyntax touches, ITypeSymbol touchType, SyntaxNode root, SemanticModel model, CancellationToken cancellationToken)
         {
-            if (!loop.AwaitKeyword.IsKind(SyntaxKind.None)) return null;
-
-            // `foreach (object touch in ...)` would box each touch; only the element type itself carries over.
-            if (model.GetDeclaredSymbol(loop, cancellationToken) is not ILocalSymbol local ||
-                !SymbolEqualityComparer.Default.Equals(local.Type, touchType))
-                return null;
-
+            if (!IsTouchLoop(loop, touchType, model, cancellationToken)) return null;
             if (loop.FirstAncestorOrSelf<MemberDeclarationSyntax>() is not { } member) return null;
-            var indexName = FreeLocalName("i", IdentifierTexts(member));
 
-            var eol = GetEndOfLine(root);
-            var unit = loop.FirstAncestorOrSelf<ClassDeclarationSyntax>() is { } @class ? IndentUnit(@class) : "    ";
+            var indexName = FreeLocalName("i", IdentifierTexts(member));
+            return (loop, ForOverTouches(loop, touches, indexName, IndentUnitOf(loop), GetEndOfLine(root)));
+        }
+
+        // `foreach (object touch in ...)` would box each touch; only the element type itself carries over.
+        private static bool IsTouchLoop(ForEachStatementSyntax loop, ITypeSymbol touchType, SemanticModel model, CancellationToken cancellationToken) =>
+            loop.AwaitKeyword.IsKind(SyntaxKind.None) &&
+            model.GetDeclaredSymbol(loop, cancellationToken) is ILocalSymbol local &&
+            SymbolEqualityComparer.Default.Equals(local.Type, touchType);
+
+        private static string IndentUnitOf(SyntaxNode node) =>
+            node.FirstAncestorOrSelf<ClassDeclarationSyntax>() is { } @class ? IndentUnit(@class) : "    ";
+
+        // Builds the `for` loop from the loop's text alone, so it also works on a loop that has already
+        // been rewritten and is no longer in the tree.
+        private static StatementSyntax ForOverTouches(ForEachStatementSyntax loop, ExpressionSyntax touches, string indexName, string unit, string eol)
+        {
             var header = "for (int " + indexName + " = 0; " + indexName + " < " + InputMember(touches, "touchCount") + "; " + indexName + "++)";
             var declaration = loop.Type + " " + loop.Identifier.ValueText + " = " + GetTouch(touches, SyntaxFactory.IdentifierName(indexName)) + ";";
 
@@ -208,11 +219,87 @@ namespace ObjectPoolLinter
                 text = header + eol + indent + "{" + eol + inner + declaration + eol + inner + statement + eol + indent + "}" + eol;
             }
 
-            var replacement = SyntaxFactory.ParseStatement(text)
+            return SyntaxFactory.ParseStatement(text)
                 .WithLeadingTrivia(loop.GetLeadingTrivia())
                 .WithTrailingTrivia(loop.GetTrailingTrivia());
+        }
 
-            return (loop, replacement);
+        // F58. `var touches = Input.touches;` whose every use is one of the three shapes above:
+        //     touches.Length                  becomes  Input.touchCount
+        //     touches[i]                      becomes  Input.GetTouch(i)
+        //     foreach (var touch in touches)  becomes  the same `for` loop
+        // and the declaration goes. Input only changes between frames, so the reads see the touches the
+        // array held, provided nothing between them can wait for a later frame: a block with `yield` or
+        // `await`, or a use inside a lambda or local function, which may run later, gets no fix.
+        private static (SyntaxNode, SyntaxNode)? InlineTouchesLocal(VariableDeclaratorSyntax declarator, ExpressionSyntax touches, ITypeSymbol arrayType, ITypeSymbol touchType, SyntaxNode root, SemanticModel model, CancellationToken cancellationToken)
+        {
+            if (declarator.Parent is not VariableDeclarationSyntax { Variables: { Count: 1 } } declaration ||
+                declaration.Type is RefTypeSyntax ||
+                declaration.Parent is not LocalDeclarationStatementSyntax { Parent: BlockSyntax block } statement ||
+                statement.Modifiers.Count > 0 || !statement.UsingKeyword.IsKind(SyntaxKind.None))
+                return null;
+
+            // A comment or directive above the declaration would go with it.
+            if (statement.GetLeadingTrivia().Any(t => !t.IsKind(SyntaxKind.WhitespaceTrivia) && !t.IsKind(SyntaxKind.EndOfLineTrivia)))
+                return null;
+
+            if (model.GetDeclaredSymbol(declarator, cancellationToken) is not ILocalSymbol local ||
+                !SymbolEqualityComparer.Default.Equals(local.Type, arrayType))
+                return null;
+
+            if (block.DescendantNodes().Any(n => n is YieldStatementSyntax or AwaitExpressionSyntax)) return null;
+
+            var uses = new List<SyntaxNode>();
+            foreach (var identifier in block.DescendantNodes().OfType<IdentifierNameSyntax>())
+            {
+                if (identifier.Identifier.ValueText != local.Name ||
+                    !SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(identifier, cancellationToken).Symbol, local))
+                    continue;
+
+                if (identifier.Ancestors().TakeWhile(a => a != block).Any(a => a is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax))
+                    return null;
+
+                switch (identifier.Parent)
+                {
+                    case MemberAccessExpressionSyntax { Name: { Identifier: { ValueText: "Length" } } } length when length.Expression == identifier:
+                        uses.Add(length);
+                        break;
+
+                    case ElementAccessExpressionSyntax { ArgumentList: { Arguments: { Count: 1 } arguments } } element when element.Expression == identifier:
+                        var index = arguments[0];
+                        if (index.NameColon != null || !index.RefKindKeyword.IsKind(SyntaxKind.None)) return null;
+                        if (model.GetTypeInfo(index.Expression, cancellationToken).ConvertedType?.SpecialType != SpecialType.System_Int32) return null;
+                        if (IsWritten(element)) return null;
+                        uses.Add(element);
+                        break;
+
+                    case ForEachStatementSyntax loop when loop.Expression == identifier && IsTouchLoop(loop, touchType, model, cancellationToken):
+                        uses.Add(loop);
+                        break;
+
+                    default:
+                        return null;
+                }
+            }
+
+            if (block.FirstAncestorOrSelf<MemberDeclarationSyntax>() is not { } member) return null;
+
+            // Each loop takes its own index name, so nested loops over the same touches do not collide.
+            var names = IdentifierTexts(member);
+            var unit = IndentUnitOf(block);
+            var eol = GetEndOfLine(root);
+            var source = touches.WithoutTrivia();
+
+            var rewritten = block.ReplaceNodes(uses, (original, current) => current switch
+            {
+                MemberAccessExpressionSyntax => InputMember(source, "touchCount").WithTriviaFrom(current),
+                ElementAccessExpressionSyntax element => GetTouch(source, element.ArgumentList.Arguments[0].Expression.WithoutTrivia()).WithTriviaFrom(current),
+                ForEachStatementSyntax loop => ForOverTouches(loop, source, FreeLocalName("i", names), unit, eol),
+                _ => current,
+            });
+
+            var position = block.Statements.IndexOf(statement);
+            return (block, rewritten.RemoveNode(rewritten.Statements[position], SyntaxRemoveOptions.KeepNoTrivia)!);
         }
 
         // `touches[0]` is a variable, `GetTouch(0)` a value: assigning to it, or to a field of it, does

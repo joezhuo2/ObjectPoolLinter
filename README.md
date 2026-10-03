@@ -254,7 +254,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.9.4.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.9.5.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -430,7 +430,7 @@ APIs keep the manual fixes listed on that page.
 | --- | --- | --- |
 | `Component.tag`, `GameObject.tag` | **Use CompareTag()** | `other.tag == "Player"` becomes `other.CompareTag("Player")`; `!=` becomes `!other.CompareTag("Player")` |
 | `Component.GetComponents`, `GetComponentsInChildren`, `GetComponentsInParent` | **Fill a reused List&lt;T&gt; with the non-allocating overload** | `var colliders = GetComponentsInChildren<Collider>();` becomes `GetComponentsInChildren<Collider>(_collidersBuffer);` then `var colliders = _collidersBuffer;`, and `colliders.Length` becomes `colliders.Count` |
-| `Input.touches` | **Use Input.touchCount and Input.GetTouch()** | `foreach (var touch in Input.touches)` becomes a `for` loop over `Input.touchCount` starting with `var touch = Input.GetTouch(i);`; `.Length` and `[i]` become `Input.touchCount` and `Input.GetTouch(i)` |
+| `Input.touches` | **Use Input.touchCount and Input.GetTouch()** | `foreach (var touch in Input.touches)` becomes a `for` loop over `Input.touchCount` starting with `var touch = Input.GetTouch(i);`; `.Length` and `[i]` become `Input.touchCount` and `Input.GetTouch(i)`, on `Input.touches` or on a local it is stored in |
 
 `CompareTag` logs an error for a tag missing from the Tag Manager, where `==` returned `false`. The
 buffer fix hands back the same list on every run, so code that keeps it past the frame has to copy it.
