@@ -256,7 +256,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.9.7.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.2.0.0.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -290,7 +290,7 @@ Build time: on a generated Unity-style project, the analyzers took the C# compil
 import or domain reload. The benchmark, the time per analyzer, and how to run it on your machine are
 in [docs/benchmarks.md](docs/benchmarks.md).
 
-Upgrading: what a major version may change, what each 1.x release added that can change a build's
+Upgrading: what a major version may change, what each 1.x and 2.x release added that can change a build's
 warnings, and what to change for each major version are in the [migration guide](docs/migration.md).
 
 ### Configuration

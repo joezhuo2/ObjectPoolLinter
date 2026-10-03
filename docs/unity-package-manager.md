@@ -53,7 +53,7 @@ The Package Manager UI writes an entry you can also add by hand:
 ```json
 {
   "dependencies": {
-    "com.joezhuo.objectpoollinter": "file:../Packages/tarballs/com.joezhuo.objectpoollinter-1.5.3.tgz"
+    "com.joezhuo.objectpoollinter": "file:../Packages/tarballs/com.joezhuo.objectpoollinter-2.0.0.tgz"
   }
 }
 ```

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v2.0.0] - 2026-10-03 - Call Graph & Configuration Checks (Release Summary)
+
+*The first release published to nuget.org and GitHub since 1.9.0, and the release that closes the
+pre-2.0.0 checklist. It has no breaking changes: no diagnostic ID is removed or renumbered, no default
+severity raised, no option renamed or given a new meaning, and the analyzer is still built against
+Roslyn 3.8. The analyzers, code fixes, generator and suppressor are unchanged from 1.9.7. See the
+[migration guide](docs/migration.md#200-from-1x) for what a build moving from 1.9.0 can start
+reporting, and how to turn each change off.*
+
+It collects `v1.9.1` through `v1.9.7`, which were never published on their own. A build upgrading from
+1.9.0 can report more than before: allocations in helpers that a hot method calls, generic boxing, and
+new OPL004 warnings for configuration that was silently ignored.
+
+### Highlights
+
+- **Hot paths follow calls (`v1.9.2`)**: a method a hot method calls is checked as if it were hot, and
+  so is what that method calls, up to `object_pool_linter.max_call_depth` calls away (3 by default).
+  OPL001, OPL002, OPL003, OPL008 and OPL009 all use it; the diagnostic names the helper, and a
+  `CallChain` property holds the path. Virtual, abstract and interface calls are followed into every
+  override and implementation in the project. `object_pool_linter.max_call_depth = 0` restores the
+  1.9.0 behaviour
+- **Generic boxing (`v1.9.4`)**: OPL002 reports a type parameter with no `class` constraint passed to
+  an `object`, `ValueType`, `Enum` or interface parameter (`boxing T to object when T is a struct`).
+  `object_pool_linter.boxing_severity = none` turns it off with every other boxing report
+- **OPL004 checks more of the configuration (`v1.9.7`)**: an option under a misspelled prefix
+  (`object_pool_lintr.excluded_types`) is reported with the option it was probably meant to be, and so
+  is a per-kind OPL002 severity that a rule-wide `dotnet_diagnostic.OPL002.severity` overrides
+- **Fix All everywhere (`v1.9.1`)**: every OPL001, OPL002 and OPL003 code fix applies across a document,
+  project or solution, one fix at a time so the fields and `Awake()` statements they add do not collide
+- **New code fixes (`v1.9.3`, `v1.9.5`)**: fill a reused `List<T>` instead of iterating an iterator
+  method, make an `async` method that never awaits synchronous, and rewrite a stored `Input.touches`
+  array to `Input.touchCount` and `Input.GetTouch(i)`
+- **Opt-in, local-only telemetry (`v1.9.1`)**: with `object_pool_linter.telemetry = true`, the new
+  Info rule OPL010 reports how often each rule fired, and the IDE counts applied code fixes in a local
+  file. Nothing is sent anywhere; without the option a build reports nothing new
+- **Build tooling (`v1.9.1`, `v1.9.6`)**: a BenchmarkDotNet project that measures the analyzers' build
+  time ([docs/benchmarks.md](docs/benchmarks.md)), a `.github/CODEOWNERS` file, a `-PackageName`
+  parameter for `build/pack-unity.ps1`, and an MSBuild-level check that the sample's misspelled option
+  produces OPL004
+
+### Changed
+- [docs/migration.md](docs/migration.md) has a section for 2.0.0, the 1.x table gains the 1.9.4 and
+  1.9.7 rows it was missing, and new rules and detections now go in an "Upgrading within 2.x" table.
+  [CONTRIBUTING.md](CONTRIBUTING.md) points there.
+- [SECURITY.md](SECURITY.md): 2.0.x is the supported version; 1.9.x no longer receives security fixes.
+- Version strings in the README's attestation example, the bug report template and the Unity Package
+  Manager guide's manifest example now read 2.0.0.
+
 ## [v1.9.7] - 2026-10-03
 
 OPL004 checks more of the configuration. A build can report new OPL004 warnings that 1.9.6 left out:
@@ -1830,7 +1878,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.7...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v2.0.0...HEAD
+[v2.0.0]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.0...v2.0.0
 [v1.9.7]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.6...v1.9.7
 [v1.9.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.5...v1.9.6
 [v1.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.4...v1.9.5

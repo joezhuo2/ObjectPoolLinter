@@ -6,8 +6,8 @@ Security fixes are released for the latest minor version only. Upgrade to it to 
 
 | Version | Supported |
 | --- | --- |
-| 1.9.x | Yes |
-| < 1.9 | No |
+| 2.0.x | Yes |
+| < 2.0 | No |
 
 ## Reporting a vulnerability
 

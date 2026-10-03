@@ -157,7 +157,7 @@ reports; a code fix needs a test of the fixed output.
 - A breaking change, as defined in [docs/migration.md](docs/migration.md#what-counts-as-a-breaking-change),
   waits for the next major version and gets a section in that guide. A new rule, or a new detection in
   an existing rule, gets a row in its
-  [Upgrading within 1.x](docs/migration.md#upgrading-within-1x) table.
+  [Upgrading within 2.x](docs/migration.md#upgrading-within-2x) table.
 
 ### Changelog
 

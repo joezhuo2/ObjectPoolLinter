@@ -6,6 +6,8 @@ when you upgrade to it. Minor and patch releases need no migration; what they ad
 that a build which treats warnings as errors is not caught out.
 
 - [What counts as a breaking change](#what-counts-as-a-breaking-change)
+- [Upgrading within 2.x](#upgrading-within-2x)
+- [2.0.0: from 1.x](#200-from-1x)
 - [Upgrading within 1.x](#upgrading-within-1x)
 - [1.0.0: from a 0.x build](#100-from-a-0x-build)
 - [Writing the guide for the next major version](#writing-the-guide-for-the-next-major-version)
@@ -37,6 +39,35 @@ are not ready for it.
 A patch version fixes false positives, false negatives and code fix output, and changes documentation
 and build tooling.
 
+## Upgrading within 2.x
+
+No 2.x release has added a rule, a detection or an option yet. Each one that does gets a row here, in
+the same form as the [1.x table](#upgrading-within-1x).
+
+## 2.0.0: from 1.x
+
+2.0.0 has no breaking changes. No diagnostic ID has been removed or renumbered, no default severity
+raised, no option renamed or given a new meaning, no message format changed, the package and
+assemblies keep their names, and the analyzer is still built against Roslyn 3.8, so the
+[Requirements](../README.md#requirements) are the same. `#pragma`, `[SuppressMessage]` and
+`.editorconfig` lines written for 1.x keep working unchanged.
+
+The analyzers in 2.0.0 are the same as in 1.9.7. The last 1.x release published to nuget.org and as
+Unity artifacts was 1.9.0, though, so a project upgrading from it picks up everything 1.9.1 to 1.9.7
+added at once. These can change what a build reports:
+
+| What a 1.9.0 build starts reporting | Default severity | To keep the 1.9.0 behavior |
+| --- | --- | --- |
+| Allocations, hidden allocations, allocating Unity APIs, asset loads and component lookups in helper methods a hot method calls, up to three calls deep (OPL001, OPL002, OPL003, OPL008, OPL009) | The rule's own; OPL001 and OPL003 are **Warning** | `object_pool_linter.max_call_depth = 0` |
+| A type parameter with no `class` constraint boxed as a call argument (OPL002) | Info | `object_pool_linter.boxing_severity = none` |
+| Options under a misspelled prefix, and per-kind OPL002 severities that a rule-wide severity overrides (OPL004) | **Warning** | Fix the reported line, or `dotnet_diagnostic.OPL004.severity = none` |
+| The telemetry summary (OPL010), only with `object_pool_linter.telemetry = true` | Info | Leave the option off |
+
+A build with `-warnaserror` or `<TreatWarningsAsErrors>` is most likely to notice the first and third
+rows. A warning reported in a helper is a real allocation on the hot path; caching it, or adding
+`#pragma warning disable` at that site, is usually better than turning propagation off for the whole
+project.
+
 ## Upgrading within 1.x
 
 No migration is needed between 1.x versions: no diagnostic ID has been removed or renumbered, no
@@ -61,6 +92,8 @@ rules, detections or options that can change what a build reports:
 | 1.6.1 | OPL003 reports more members that build a new string or object (`Application.dataPath`, `Scene.name`, `NavMeshAgent.path`, `JsonUtility`, ...) | **Warning** | `#pragma` or `[SuppressMessage]` per site, or the rule's severity |
 | 1.9.1 | New rule [OPL010](rules/OPL010.md), the telemetry summary, and the `telemetry` option; reported only with `object_pool_linter.telemetry = true`, so a build without the option reports nothing new | Info | Leave the option off, or `dotnet_diagnostic.OPL010.severity = none` |
 | 1.9.2 | OPL001, OPL002, OPL003, OPL008 and OPL009 report in helper methods a hot method calls, up to three calls deep, and the new `max_call_depth` option; the message names the helper | The rule's own | `object_pool_linter.max_call_depth = 0` |
+| 1.9.4 | OPL002 reports a type parameter with no `class` constraint passed to an `object`, `ValueType`, `Enum` or interface parameter (`boxing T to object when T is a struct`) | Info | `object_pool_linter.boxing_severity = none` |
+| 1.9.7 | OPL004 reports options under a misspelled prefix (`object_pool_lintr.*`) and per-kind OPL002 severities that a rule-wide `dotnet_diagnostic.OPL002.severity` overrides | **Warning** | Fix the reported line, or `dotnet_diagnostic.OPL004.severity = none` |
 
 `AnalyzerReleases.Shipped.md` in `src/ObjectPoolLinter/` is the authoritative record of when each rule
 shipped and at which severity. [CHANGELOG.md](../CHANGELOG.md) lists every detection added to an
