@@ -215,14 +215,16 @@ need only the hosts listed under [Requirements](#requirements).
 pwsh build/pack-unity.ps1
 ```
 
-Writes `ObjectPoolLinter-<version>.unitypackage` and `com.joezhuo.objectpoollinter-<version>.tgz`
+Writes `ObjectPoolLinter-<version>.unitypackage` and `<package-name>-<version>.tgz`
 to `artifacts/unity/`. The version comes from
 `src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj` unless you pass `-Version <version>`.
 Add `-SkipBuild` to package the DLLs already in `bin/Release` instead of building first, and
 `-UnityVersion <year>.<minor>` to change the minimum Unity version the UPM package declares (default
-`2021.3`; see [Minimum Unity version](docs/unity-package-manager.md#minimum-unity-version)). The script
-fails if `unity/package.json.in` has a placeholder left unreplaced or if the `package.json` inside the
-finished tarball declares the wrong version; CI runs it on every push.
+`2021.3`; see [Minimum Unity version](docs/unity-package-manager.md#minimum-unity-version)), and
+`-PackageName <name>` to publish under a UPM name other than `com.joezhuo.objectpoollinter` (see
+[Package name](docs/unity-package-manager.md#package-name)). The script fails if
+`unity/package.json.in` has a placeholder left unreplaced or if the `package.json` inside the
+finished tarball declares the wrong name or version; CI runs it on every push.
 
 ### Releases
 
@@ -254,7 +256,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.9.5.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.9.6.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub

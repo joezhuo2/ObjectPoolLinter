@@ -28,7 +28,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# One entry per warning in samples/SampleUnityCode/SampleBehaviour.cs: '<rule>: <allocation> in <method>'.
+# One entry per warning in samples/SampleUnityCode/SampleBehaviour.cs: '<rule>: <allocation> in <method>',
+# plus the OPL004 for the misspelled option in samples/SampleUnityCode/.editorconfig: 'OPL004: <option>'.
 $expected = @(
     'OPL001: new List<int> in Update'
     'OPL001: new List<string> in Update'
@@ -48,6 +49,7 @@ $expected = @(
     'OPL007: NativeArray<int> TempJob not disposed on every path in Update'
     'OPL008: Resources.Load in Update'       # raised to a warning in .editorconfig
     'OPL009: Component.GetComponent in Update' # raised to a warning in .editorconfig
+    'OPL004: object_pool_linter.exlude_types'  # misspelled on purpose in .editorconfig
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -72,6 +74,8 @@ $pattern = '^(?<location>.+?\(\d+,\d+\)): warning (?<rule>OPL\d{3}): ''(?<alloca
 $jobPattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL006: Field ''(?<field>.+?)'' of job struct ''(?<job>.+?)'' has the reference type ''(?<type>.+?)''\.'
 # OPL007 reads "'<type>' allocated with Allocator.<allocator> in '<method>' is never disposed." or "... is not disposed on every path ...".
 $disposePattern = '^(?<location>.+?\(\d+,\d+\)): warning OPL007: ''(?<type>.+?)'' allocated with Allocator\.(?<allocator>\w+) in ''(?<method>.+?)'' is (?<problem>never disposed|not disposed on every path)'
+# OPL004 has no source location ("CSC : warning OPL004: ..."), so it is keyed on the option it names.
+$optionPattern = 'warning OPL004: ObjectPoolLinter option ignored: ''(?<option>[^'']+)'''
 $byLocation = [ordered]@{}
 foreach ($line in $output) {
     $match = [regex]::Match($line, $pattern)
@@ -90,6 +94,12 @@ foreach ($line in $output) {
     if ($match.Success) {
         $key = "OPL007 $($match.Groups['location'].Value.Trim())"
         $byLocation[$key] = "OPL007: $($match.Groups['type'].Value) $($match.Groups['allocator'].Value) $($match.Groups['problem'].Value) in $($match.Groups['method'].Value)"
+        continue
+    }
+    $match = [regex]::Match($line, $optionPattern)
+    if ($match.Success) {
+        $key = "OPL004 $($match.Groups['option'].Value)"
+        $byLocation[$key] = "OPL004: $($match.Groups['option'].Value)"
     }
 }
 $actual = @($byLocation.Values)

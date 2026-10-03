@@ -402,6 +402,36 @@ is built against Roslyn 3.8, which cannot, and asks for the list at run time ins
 the .NET 10 SDK and other recent compilers. On a compiler without that ability, invalid *values* are
 still reported, but a misspelled *name* is not.
 
+### In an MSBuild build
+
+OPL004 runs with the other analyzers inside `csc`, so any MSBuild build that runs analyzers reports it:
+`dotnet build`, `msbuild`, Visual Studio and Rider builds, and CI. It is printed with no file name:
+
+```
+CSC : warning OPL004: ObjectPoolLinter option ignored: 'object_pool_linter.exlude_types' is not a recognized option. Did you mean 'object_pool_linter.excluded_types'? [MyGame.csproj]
+```
+
+To make a bad option fail the build rather than warn, raise the rule to an error in the same
+`.editorconfig`, or list it in `WarningsAsErrors` (in the project file or a `Directory.Build.props`):
+
+```ini
+dotnet_diagnostic.OPL004.severity = error
+```
+
+```xml
+<PropertyGroup>
+  <WarningsAsErrors>$(WarningsAsErrors);OPL004</WarningsAsErrors>
+</PropertyGroup>
+```
+
+`-warnaserror` (or `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`) has the same effect on
+every warning. A build with `RunAnalyzersDuringBuild` or `RunAnalyzers` set to `false` runs no
+analyzer, so it reports no OPL004 either.
+
+The repository checks this end to end: `samples/SampleUnityCode/.editorconfig` carries a misspelled
+option, and [`build/verify-sample.ps1`](../build/verify-sample.ps1), run by CI on every push, fails
+unless the sample's `dotnet build` prints the OPL004 for it.
+
 ## How files combine
 
 - **Nearer wins.** An `.editorconfig` in a subfolder overrides the same option from a folder above.

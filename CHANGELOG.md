@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.6] - 2026-10-03
+
+Build-side checks for configuration and the Unity package name. The analyzers are unchanged; a build
+reports nothing it did not report in 1.9.5.
+
+### Added
+- **UPM package name is a parameter (P14).** `build/pack-unity.ps1 -PackageName <name>` writes `<name>`
+  to the `name` field of the UPM `package.json` and names the tarball `<name>-<version>.tgz`.
+  `unity/package.json.in` now carries a `__PACKAGE_NAME__` placeholder. The default,
+  `com.joezhuo.objectpoollinter`, is what releases ship, so the release artifacts do not change. The
+  script rejects a name UPM would refuse (uppercase letters, no dot, characters other than lowercase
+  letters, digits, `-`, `_` and `.`, more than 214 characters), and fails if the `package.json` read
+  back from the tarball declares a different name. Asset GUIDs in a renamed tarball are hashed from
+  the name, so it never shares a GUID with the original; with the default name they are the same as
+  before.
+- **OPL004 checked in a real MSBuild build (P13).** `samples/SampleUnityCode/.editorconfig` carries a
+  misspelled option (`object_pool_linter.exlude_types`), and `build/verify-sample.ps1`, which CI runs on
+  every push, now expects the `CSC : warning OPL004` the sample's `dotnet build` prints for it, next to
+  the 18 source warnings. Until now OPL004 was covered only by the analyzer test harness. The sample
+  lists OPL004 in `WarningsNotAsErrors` so the `-warnaserror` build keeps it a warning.
+
+### Changed
+- [docs/configuration.md](docs/configuration.md) has a new section, "In an MSBuild build": where OPL004
+  appears in build output, how to make a bad option fail the build (`dotnet_diagnostic.OPL004.severity
+  = error` or `WarningsAsErrors`), and that a build with `RunAnalyzersDuringBuild=false` reports none.
+  [docs/rules/OPL004.md](docs/rules/OPL004.md) links to it.
+- [docs/unity-package-manager.md](docs/unity-package-manager.md) documents `-PackageName` under a new
+  "Package name" section and how the name feeds the GUIDs; the README's build section mentions the
+  parameter.
+
 ## [v1.9.5] - 2026-10-03
 
 Closes the code-fix items of the pre-2.0.0 checklist. Four of the five shipped earlier and are
@@ -1762,7 +1792,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.5...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.6...HEAD
+[v1.9.6]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.5...v1.9.6
 [v1.9.5]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.4...v1.9.5
 [v1.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.3...v1.9.4
 [v1.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.2...v1.9.3

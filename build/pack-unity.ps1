@@ -6,7 +6,7 @@
     Produces two files under the output directory:
 
       ObjectPoolLinter-<version>.unitypackage      drag-and-drop import into Assets/
-      com.joezhuo.objectpoollinter-<version>.tgz   UPM tarball ("Install package from tarball")
+      <package-name>-<version>.tgz                 UPM tarball ("Install package from tarball")
 
     Both carry ObjectPoolLinter.dll and ObjectPoolLinter.CodeFixes.dll with .meta files that label
     them RoslynAnalyzer and disable every platform, which is what Unity requires of an analyzer
@@ -30,6 +30,14 @@
     Minimum Unity version the UPM package declares, as <year>.<minor> (the "unity" field of
     package.json). Defaults to 2021.3, the oldest release for which Unity documents Roslyn 3.8, the
     version this analyzer is built against, as the analyzer API. Raise it here when that changes.
+
+.PARAMETER PackageName
+    UPM package name, written to the "name" field of package.json and used for the tarball file name.
+    Defaults to com.joezhuo.objectpoollinter. A fork or an internal mirror that publishes its own
+    build sets its own name here, so it can sit in a registry or a manifest next to the original.
+    Must follow Unity's naming rules: lowercase reverse-domain notation, at most 214 characters.
+    Asset GUIDs in the tarball are derived from the name as well, so two packages with different names
+    never share a GUID; the default name keeps the GUIDs earlier releases shipped.
 #>
 [CmdletBinding()]
 param(
@@ -38,11 +46,17 @@ param(
     [switch]$SkipBuild,
     [string]$Version,
     [ValidatePattern('^\d{4}\.\d+$')]
-    [string]$UnityVersion = '2021.3'
+    [string]$UnityVersion = '2021.3',
+    [ValidatePattern('^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$')]
+    [ValidateLength(1, 214)]
+    [string]$PackageName = 'com.joezhuo.objectpoollinter'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# ValidatePattern ignores case, and Unity rejects a name with an uppercase letter.
+if ($PackageName -cne $PackageName.ToLowerInvariant()) { throw "-PackageName '$PackageName' must be lowercase." }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageProject = Join-Path $repoRoot 'src/ObjectPoolLinter.Package/ObjectPoolLinter.Package.csproj'
@@ -74,19 +88,24 @@ foreach ($dll in @($analyzerDll, $codeFixDll)) {
 
 # Unity keys every asset by the GUID in its .meta file. Hashing the asset path keeps those GUIDs
 # stable across runs without checking generated .meta files into the repository.
-function New-AssetGuid([string]$assetPath) {
+# The UPM metas pass $guidSeed, which is the package name for any name but the default, so a renamed
+# package does not collide with the original when both are installed.
+$defaultPackageName = 'com.joezhuo.objectpoollinter'
+$guidSeed = if ($PackageName -eq $defaultPackageName) { 'ObjectPoolLinter' } else { $PackageName }
+
+function New-AssetGuid([string]$assetPath, [string]$seed = 'ObjectPoolLinter') {
     $md5 = [System.Security.Cryptography.MD5]::Create()
     try {
-        $bytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("ObjectPoolLinter:$assetPath"))
+        $bytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("${seed}:$assetPath"))
     }
     finally { $md5.Dispose() }
     -join ($bytes | ForEach-Object { $_.ToString('x2') })
 }
 
-function New-PluginMeta([string]$assetPath) {
+function New-PluginMeta([string]$assetPath, [string]$seed = 'ObjectPoolLinter') {
     @"
 fileFormatVersion: 2
-guid: $(New-AssetGuid $assetPath)
+guid: $(New-AssetGuid $assetPath $seed)
 labels:
 - RoslynAnalyzer
 PluginImporter:
@@ -117,10 +136,10 @@ PluginImporter:
 "@
 }
 
-function New-TextMeta([string]$assetPath) {
+function New-TextMeta([string]$assetPath, [string]$seed = 'ObjectPoolLinter') {
     @"
 fileFormatVersion: 2
-guid: $(New-AssetGuid $assetPath)
+guid: $(New-AssetGuid $assetPath $seed)
 TextScriptImporter:
   externalObjects: {}
   userData:
@@ -129,10 +148,10 @@ TextScriptImporter:
 "@
 }
 
-function New-FolderMeta([string]$assetPath) {
+function New-FolderMeta([string]$assetPath, [string]$seed = 'ObjectPoolLinter') {
     @"
 fileFormatVersion: 2
-guid: $(New-AssetGuid $assetPath)
+guid: $(New-AssetGuid $assetPath $seed)
 folderAsset: yes
 DefaultImporter:
   externalObjects: {}
@@ -152,6 +171,7 @@ function Write-TextFile([string]$path, [string]$content) {
 
 $manifest = (Get-Content -Raw (Join-Path $repoRoot 'unity/package.json.in')).Replace('__VERSION__', $version)
 $manifest = $manifest.Replace('__UNITY_VERSION__', $UnityVersion)
+$manifest = $manifest.Replace('__PACKAGE_NAME__', $PackageName)
 
 # A placeholder the replacements above missed (a renamed or newly added __NAME__) would ship as a
 # literal string, and Unity rejects a package.json whose version is not SemVer. Fail here instead.
@@ -173,20 +193,20 @@ $analyzerFolder = Join-Path $upmRoot 'RoslynAnalyzers'
 New-Item -ItemType Directory -Force -Path $analyzerFolder | Out-Null
 
 Write-TextFile (Join-Path $upmRoot 'package.json') $manifest
-Write-TextFile (Join-Path $upmRoot 'package.json.meta') (New-TextMeta 'package.json')
+Write-TextFile (Join-Path $upmRoot 'package.json.meta') (New-TextMeta 'package.json' $guidSeed)
 Write-TextFile (Join-Path $upmRoot 'README.md') $packageReadme
-Write-TextFile (Join-Path $upmRoot 'README.md.meta') (New-TextMeta 'README.md')
+Write-TextFile (Join-Path $upmRoot 'README.md.meta') (New-TextMeta 'README.md' $guidSeed)
 Write-TextFile (Join-Path $upmRoot 'LICENSE.md') $license
-Write-TextFile (Join-Path $upmRoot 'LICENSE.md.meta') (New-TextMeta 'LICENSE.md')
-Write-TextFile (Join-Path $upmRoot 'RoslynAnalyzers.meta') (New-FolderMeta 'RoslynAnalyzers')
+Write-TextFile (Join-Path $upmRoot 'LICENSE.md.meta') (New-TextMeta 'LICENSE.md' $guidSeed)
+Write-TextFile (Join-Path $upmRoot 'RoslynAnalyzers.meta') (New-FolderMeta 'RoslynAnalyzers' $guidSeed)
 
 foreach ($dll in @($analyzerDll, $codeFixDll)) {
     $name = Split-Path -Leaf $dll
     Copy-Item $dll (Join-Path $analyzerFolder $name)
-    Write-TextFile (Join-Path $analyzerFolder "$name.meta") (New-PluginMeta "RoslynAnalyzers/$name")
+    Write-TextFile (Join-Path $analyzerFolder "$name.meta") (New-PluginMeta "RoslynAnalyzers/$name" $guidSeed)
 }
 
-$tgz = Join-Path $OutputDirectory "com.joezhuo.objectpoollinter-$version.tgz"
+$tgz = Join-Path $OutputDirectory "$PackageName-$version.tgz"
 if (Test-Path $tgz) { Remove-Item -Force $tgz }
 & tar -czf $tgz -C (Join-Path $staging 'upm') 'package'
 if ($LASTEXITCODE -ne 0) { throw "tar failed while building $tgz." }
@@ -197,6 +217,7 @@ $packedManifest = (& tar -xzOf $tgz 'package/package.json') -join "`n"
 if ($LASTEXITCODE -ne 0) { throw "Could not read package/package.json back from $tgz." }
 if ($packedManifest -match '__[A-Z0-9_]+__') { throw "$tgz carries an unreplaced placeholder: $($Matches[0])." }
 $packed = $packedManifest | ConvertFrom-Json
+if ($packed.name -ne $PackageName) { throw "$tgz declares name '$($packed.name)', expected '$PackageName'." }
 if ($packed.version -ne $version) { throw "$tgz declares version '$($packed.version)', expected '$version'." }
 if ($packed.unity -ne $UnityVersion) { throw "$tgz declares unity '$($packed.unity)', expected '$UnityVersion'." }
 
@@ -231,6 +252,6 @@ if ($LASTEXITCODE -ne 0) { throw "tar failed while building $unityPackage." }
 
 Remove-Item -Recurse -Force $staging
 
-Write-Host "ObjectPoolLinter $version (Unity $UnityVersion or newer)"
+Write-Host "ObjectPoolLinter $version as $PackageName (Unity $UnityVersion or newer)"
 Write-Host "  $unityPackage"
 Write-Host "  $tgz"

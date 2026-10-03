@@ -106,7 +106,8 @@ They do not change here. [`build/pack-unity.ps1`](../build/pack-unity.ps1) deriv
 asset's path inside the package - the MD5 of `ObjectPoolLinter:<path>` - rather than generating a
 fresh one per build. `RoslynAnalyzers/ObjectPoolLinter.dll` therefore has the same GUID in 1.5.3 that
 it had in 1.5.0, and will keep it in every later release. The `.meta` files are not checked into the
-repository; they are regenerated identically on every pack.
+repository; they are regenerated identically on every pack. A tarball packed under another
+[package name](#package-name) hashes `<name>:<path>` instead, so its GUIDs differ from these.
 
 Two consequences worth knowing:
 
@@ -166,8 +167,30 @@ The parameter only accepts `<year>.<minor>`, the form UPM expects. Raise the def
 when the minimum moves - for example if the analyzer is rebuilt against a newer Roslyn that 2021.3
 cannot load - and record it in the changelog, since it stops the package installing on older editors.
 
+## Package name
+
+The `name` field is not hard-coded either: `unity/package.json.in` carries `__PACKAGE_NAME__`, which
+`-PackageName` fills. It defaults to `com.joezhuo.objectpoollinter`, the name every release ships
+under. A fork, or a studio that mirrors its own build into a scoped registry, can publish under its own
+name so the two never clash in a manifest:
+
+```
+pwsh build/pack-unity.ps1 -PackageName com.example.objectpoollinter
+```
+
+The tarball is named after it (`com.example.objectpoollinter-<version>.tgz`). The script accepts only
+names UPM accepts: lowercase, reverse-domain notation with at least one dot, letters, digits, `-` and
+`_`, at most 214 characters.
+
+The asset GUIDs in the tarball are derived from the name too, so a renamed package and the original
+never share a GUID if both end up in one project. With the default name the GUIDs are exactly those
+earlier releases shipped, so upgrading in place is unaffected. The `.unitypackage` does not use the
+name and its GUIDs do not change.
+
+## Checking the manifest
+
 After packing, the script reads `package/package.json` back out of the `.tgz` and fails if any
-`__NAME__` placeholder survived or if `version` or `unity` differ from what was requested. CI runs
+`__NAME__` placeholder survived or if `name`, `version` or `unity` differ from what was requested. CI runs
 the Unity pack on every push, so a broken manifest never reaches a release.
 
 ## Troubleshooting
