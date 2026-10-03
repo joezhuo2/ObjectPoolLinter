@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.9.4] - 2026-10-03
+
+Generic boxing in OPL002. A build that passes a type parameter to an `object` or interface parameter
+in a hot method can report new Info diagnostics that 1.9.3 left out;
+`object_pool_linter.boxing_severity = none` turns off every boxing report, this one included.
+
+### Added
+- **Generic boxing at interface and constraint boundaries (F45).** A type parameter with no `class`
+  constraint (unconstrained, or constrained only to interfaces such as `where T : IHandler`) passed as an
+  argument to a parameter typed `object`, `ValueType`, `Enum` or an interface is reported, because the
+  call boxes whenever the type argument is a struct: `Log.Write(value)` and `other.Equals(value)` inside
+  `Tracker<T>`, or `Register(handler)` against `Register(IHandler)` from `Notify<T>(T handler) where T :
+  IHandler`. The message reads `boxing T to object when T is a struct`. It uses the `boxing` kind and
+  its severity option, and follows calls from hot methods like every other OPL002 check.
+- A `T` with a `class` constraint, or a class constraint such as `where T : Component`, is never
+  reported; neither is a type parameter assigned or returned as `object` outside a call argument, nor
+  one passed to `string.Format` or `string.Concat`, which are reported once as the string call.
+- Tests in `HiddenAllocationAnalyzerTests.cs` for interface-constrained and unconstrained type
+  parameters, `Equals(object)`, reference- and struct-constrained type parameters, and a cold method.
+
+### Changed
+- [docs/rules/OPL002.md](docs/rules/OPL002.md) lists the new construct, what is still left out, and how
+  to remove the boxing in generic code. The README's list of what no rule reports is updated to match.
+
 ## [v1.9.3] - 2026-10-02
 
 Code fixes for the iterator and `async` state machines OPL002 has reported since 1.5.5. No new
@@ -1709,7 +1733,8 @@ published.
 ### Removed
 - Empty placeholder test `tests/ObjectPoolLinter.Tests/UnitTest1.cs`.
 
-[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.3...HEAD
+[Unreleased]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.4...HEAD
+[v1.9.4]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.3...v1.9.4
 [v1.9.3]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.2...v1.9.3
 [v1.9.2]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.1...v1.9.2
 [v1.9.1]: https://github.com/joezhuo2/ObjectPoolLinter/compare/v1.9.0...v1.9.1

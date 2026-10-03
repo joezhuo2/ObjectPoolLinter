@@ -711,6 +711,137 @@ public class Counter : MonoBehaviour
         }
 
         [Fact]
+        public async Task GenericBoxing_TypeParameterPassedToObjectOrInterface_Reports()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+public interface IHandler { void Handle(); }
+
+public static class Log
+{
+    public static void Write(object value) { }
+    public static void Value(ValueType value) { }
+    public static void Flag(Enum value) { }
+    public static void Handler(IHandler handler) { }
+    public static void Compare(IComparable<int> value) { }
+}
+
+public class Tracker<T> : MonoBehaviour where T : IComparable<int>
+{
+    T current;
+    T previous;
+
+    void Update()
+    {
+        Log.Write({|#0:current|});
+        Log.Compare({|#1:current|});
+        var same = current.Equals({|#2:previous|});
+        var comparer = EqualityComparer<T>.Default.Equals(current, previous);
+    }
+}
+
+public class Notifier : MonoBehaviour
+{
+    void Update()
+    {
+        Notify(new Handler());
+    }
+
+    void Notify<THandler>(THandler handler) where THandler : IHandler
+    {
+        Log.Handler({|#3:handler|});
+        handler.Handle();
+    }
+
+    void Mark<TFlag>(TFlag flag) where TFlag : Enum
+    {
+        Log.Flag(flag);
+    }
+}
+
+public struct Handler : IHandler { public void Handle() { } }
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("boxing T to object when T is a struct"),
+                Diagnostic("boxing T to IComparable<int> when T is a struct", location: 1),
+                Diagnostic("boxing T to object when T is a struct", location: 2),
+                Diagnostic("boxing THandler to IHandler when THandler is a struct", "Notify", location: 3));
+        }
+
+        [Fact]
+        public async Task GenericBoxing_ReferenceOrValueConstrainedOrNotAnArgument_ReportsOnlyKnownStructs()
+        {
+            var source = @"
+using UnityEngine;
+
+public static class Log
+{
+    public static void Write(object value) { }
+    public static void Keep<TValue>(TValue value) { }
+}
+
+public class Tracker<TRef, TStruct, TAny> : MonoBehaviour
+    where TRef : class
+    where TStruct : struct
+{
+    TRef reference;
+    TStruct value;
+    TAny any;
+    Component component;
+
+    void Update()
+    {
+        Log.Write(reference);
+        Log.Write({|#0:value|});
+        Log.Keep(any);
+        object stored = any;
+        var text = {|#1:string.Format(""{0}"", any)|};
+    }
+
+    void Find<TComponent>(TComponent found) where TComponent : Component
+    {
+        Log.Write(found);
+    }
+}
+";
+
+            await VerifyAsync(
+                source,
+                Diagnostic("boxing TStruct to object"),
+                Diagnostic("string.Format()", location: 1));
+        }
+
+        [Fact]
+        public async Task GenericBoxing_ColdMethod_DoesNotReport()
+        {
+            var source = @"
+using UnityEngine;
+
+public static class Log
+{
+    public static void Write(object value) { }
+}
+
+public class Tracker<T> : MonoBehaviour
+{
+    T current;
+
+    void Start()
+    {
+        Log.Write(current);
+    }
+}
+";
+
+            await VerifyAsync(source);
+        }
+
+        [Fact]
         public async Task StructWithoutOverride_CallingObjectMethod_Reports()
         {
             var source = @"

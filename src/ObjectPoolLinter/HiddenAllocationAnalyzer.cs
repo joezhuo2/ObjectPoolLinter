@@ -274,7 +274,8 @@ namespace ObjectPoolLinter
 
                 var operand = conversion.Operand;
                 if (operand.Type == null || operand is IObjectCreationOperation) return;
-                if (operand.Type is ITypeParameterSymbol { HasValueTypeConstraint: false }) return;
+                var genericBoxing = operand.Type is ITypeParameterSymbol { HasValueTypeConstraint: false };
+                if (genericBoxing && !IsGenericArgumentBoxing(conversion, (ITypeParameterSymbol)operand.Type)) return;
                 if (operand.ConstantValue is { HasValue: true, Value: null }) return;
 
                 if (conversion.Parent is IInterpolationOperation) return;
@@ -283,7 +284,24 @@ namespace ObjectPoolLinter
                     compound.Type?.SpecialType == SpecialType.System_String) return;
                 if (IsArgumentToStringFormattingCall(conversion)) return;
 
-                Report(context, conversion.Syntax, AllocationKind.Boxing, "boxing " + Display(operand.Type) + " to " + Display(conversion.Type));
+                var allocation = "boxing " + Display(operand.Type) + " to " + Display(conversion.Type);
+                if (genericBoxing) allocation += " when " + Display(operand.Type) + " is a struct";
+                Report(context, conversion.Syntax, AllocationKind.Boxing, allocation);
+            }
+
+            // A type parameter that may be a struct (no `class` constraint) passed as an argument to an
+            // object, ValueType, Enum or interface parameter: `Debug.Log(value)`, `other.Equals(value)`,
+            // `Register(handler)` against `Register(IHandler)` from `Notify<T>(T handler) where T : IHandler`.
+            // The call boxes whenever the method runs with a struct type argument. Assignments and returns
+            // of a type parameter stay unreported; an argument is the place a hot generic helper usually
+            // boxes, and the place `EqualityComparer<T>`, an `IEquatable<T>` constraint or a generic
+            // overload fixes it.
+            private static bool IsGenericArgumentBoxing(IConversionOperation conversion, ITypeParameterSymbol typeParameter)
+            {
+                if (typeParameter.IsReferenceType || conversion.Parent is not IArgumentOperation) return false;
+
+                return conversion.Type is { TypeKind: TypeKind.Interface } or
+                    { SpecialType: SpecialType.System_Object or SpecialType.System_ValueType or SpecialType.System_Enum };
             }
 
             // A hot method that is itself an iterator or async method: Unity (or the manager driving a

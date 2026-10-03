@@ -254,7 +254,7 @@ the NuGet packages the shipped projects restore, with its own signed attestation
 download came from this repository's release workflow:
 
 ```bash
-gh attestation verify ObjectPoolLinter.1.9.3.nupkg --repo joezhuo2/ObjectPoolLinter
+gh attestation verify ObjectPoolLinter.1.9.4.nupkg --repo joezhuo2/ObjectPoolLinter
 ```
 
 Sign release tags with `git tag -s` (GPG or SSH). The run warns when the tag has no signature GitHub
@@ -629,8 +629,9 @@ and `GameObject.Find`, `FindWithTag`, `FindGameObjectWithTag` and the single-obj
 - iterator property getters, iterator and `async` methods in assemblies referenced only as reference
   assemblies (which drop the compiler's state-machine attributes), and `async` methods returning a
   pooled task-like type such as UniTask or `Awaitable`, which is deliberate;
-- `new int?()` (which boxes to null) and boxing of an unconstrained generic `T`, which depends on the
-  type argument at run time;
+- `new int?()` (which boxes to null), and a generic `T` with no `class` or `struct` constraint boxed
+  anywhere but as a call argument (`object o = value;`, `return value;` from a method returning
+  `object`), which depends on the type argument at run time;
 - Unity APIs that cost CPU time without allocating, other than the lookups OPL009 matches (for
   example `GetComponent<T>()` on a parameter or a local, which cannot be cached);
 - Unity string and object members other than the ones listed above, and array-returning members of
